@@ -56,9 +56,11 @@ export function AuthScreen() {
         const cleanedCode = code.trim().toUpperCase();
         const cleanedName = name.trim();
         const cleanedPin = pin.trim();
-        if (cleanedCode.length < 3) throw new Error('Enter a join code');
         if (!cleanedName) throw new Error('What should we call you?');
         if (!/^\d{4}$/.test(cleanedPin)) throw new Error('PIN must be 4 digits');
+        // Code is optional — if blank, just sign in and land on the dashboard
+        // (so members can check stats, bank, history any time).
+        if (cleanedCode && cleanedCode.length < 3) throw new Error('Code should be 4 letters or empty');
 
         const userEmail = nameToEmail(cleanedName);
         const userPwd = pinToPassword(cleanedPin);
@@ -102,6 +104,12 @@ export function AuthScreen() {
 
         try { localStorage.setItem('home-pot-name', cleanedName); } catch { /* noop */ }
 
+        // No code → just signed in. Land on the dashboard so they can browse
+        // their stats, bank balance, and any live games.
+        if (!cleanedCode) {
+          navigate('/');
+          return;
+        }
         const target = await resolveJoinCode(cleanedCode);
         if (!target) throw new Error(`No game with code "${cleanedCode}"`);
         if (target.kind === 'tournament') navigate(`/tournament/${target.id}`);
@@ -156,9 +164,15 @@ export function AuthScreen() {
 
           {mode === 'quick' && (
             <>
-              {returning && (
+              {returning ? (
                 <div className="bg-brass-500/10 border border-brass-500/30 rounded-xl px-3 py-2 text-center text-sm text-brass-200">
                   Welcome back, <b>{returning}</b> 👋
+                </div>
+              ) : (
+                <div className="bg-felt-800/60 border border-felt-700 rounded-xl px-3 py-3 text-center text-xs text-ink-200 leading-relaxed">
+                  <div className="font-semibold text-brass-200 mb-1">First time here?</div>
+                  Pick any name and a <b>4-digit PIN you'll remember</b>.
+                  Next time you open the app — on any phone — same name + PIN signs you straight in.
                 </div>
               )}
 
@@ -175,7 +189,9 @@ export function AuthScreen() {
               </div>
 
               <div>
-                <label className="label">PIN <span className="text-ink-500 normal-case font-normal">(4 digits, remember it)</span></label>
+                <label className="label">
+                  {returning ? 'Your PIN' : 'Choose a 4-digit PIN'}
+                </label>
                 <input
                   value={pin}
                   onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
@@ -187,10 +203,17 @@ export function AuthScreen() {
                   maxLength={4}
                   required
                 />
+                {!returning && (
+                  <p className="text-center text-[11px] text-ink-500 mt-2">
+                    Make it up — don't share it. Forgot it later? Ask the host to reset it.
+                  </p>
+                )}
               </div>
 
               <div>
-                <label className="label">Join code</label>
+                <label className="label">
+                  Join code <span className="text-ink-500 normal-case font-normal">(optional)</span>
+                </label>
                 <input
                   value={code}
                   onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4))}
@@ -201,14 +224,11 @@ export function AuthScreen() {
                   spellCheck={false}
                   maxLength={4}
                   className="w-full text-center font-display text-5xl tracking-[0.5em] uppercase bg-felt-900/80 border-2 border-felt-700/60 rounded-2xl py-4 text-brass-shine focus:outline-none focus:border-brass-400/60"
-                  required
                 />
+                <p className="text-center text-[11px] text-ink-500 mt-2">
+                  Tonight's game has a code. Skip to just check your stats.
+                </p>
               </div>
-
-              <p className="text-center text-[11px] text-ink-500">
-                Same <b>name</b> + <b>PIN</b> = same identity, on any device, forever.
-                {!returning && ' First time? Pick anything memorable.'}
-              </p>
             </>
           )}
 
@@ -242,7 +262,11 @@ export function AuthScreen() {
 
           <Button type="submit" full disabled={busy}>
             {busy ? 'Working…' :
-              mode === 'quick' ? `Join ${code || 'game'}` : 'Deal me in'}
+              mode === 'quick'
+                ? (returning
+                    ? (code ? `Join ${code}` : 'Sign in')
+                    : (code ? `Create account & join ${code}` : 'Create my account'))
+                : 'Deal me in'}
           </Button>
         </form>
 
