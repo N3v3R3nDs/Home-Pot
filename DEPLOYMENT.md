@@ -1,20 +1,70 @@
 # Deployment
 
 Production Home Pot runs at **https://poker.sexyness.app**, served by the
-shared Caddy on the home server. Image is built locally (or in CI) and
-published to GitHub Container Registry; Portainer pulls and runs the stack.
+shared Caddy on the home server. Three images are built locally, pushed to
+GitHub Container Registry, then Portainer pulls and runs them.
 
 ```
-  local / CI                 GHCR                       server
-┌──────────────┐         ┌─────────┐          ┌───────────────────────┐
-│  docker      │  push   │ ghcr.io │  pull    │  portainer stack      │
-│  buildx push │────────▶│  …/pwa  │─────────▶│  docker-compose.prod  │
-└──────────────┘         └─────────┘          │  behind Caddy on :443 │
-       │                                       └───────────────────────┘
-       │ webhook POST
-       ▼
-  Portainer redeploys stack with newest :latest
+  local (arm64 Mac)                   GHCR                       server (x86_64)
+┌────────────────────┐     push     ┌─────────┐     pull     ┌─────────────────────┐
+│  docker buildx     │──linux/amd64▶│ ghcr.io │─────────────▶│  portainer stack    │
+│  (pwa, db, kong-c) │              │  …/*    │              │  behind Caddy :443  │
+└────────────────────┘              └─────────┘              └─────────────────────┘
+           │                                                            ▲
+           └────── curl $PORTAINER_WEBHOOK ─────────────────────────────┘
+                        (tells Portainer: pull :latest, recreate)
 ```
+
+---
+
+## Day-to-day: pushing a code change
+
+From the repo root on your Mac:
+
+```bash
+./scripts/deploy.sh
+```
+
+That's it. Script lives at [scripts/deploy.sh](scripts/deploy.sh) — it builds
+the PWA (the image that changes most), pushes to GHCR, and hits the Portainer
+webhook to trigger a redeploy. Takes ~60-90s after the first build (cached).
+
+The DB and kong-config images rarely change — rebuild them only when you edit
+`supabase/migrations/` or `supabase/kong.yml`:
+
+```bash
+./scripts/deploy.sh --all   # rebuild pwa + db + kong-config
+```
+
+---
+
+## One-time setup (already done, documented for rebuild)
+
+### Required env on your Mac
+
+Put these in `~/.zshrc` (or wherever):
+
+```bash
+export VITE_SUPABASE_ANON_KEY='eyJ...'                 # from 1Password
+export PORTAINER_WEBHOOK='https://.../api/stacks/webhooks/<uuid>'
+```
+
+The anon key is the same JWT that's in the Portainer stack's env vars
+(baked into the PWA bundle at build time).
+
+### GHCR login
+
+```bash
+echo "$GH_PAT" | docker login ghcr.io -u N3v3R3nD --password-stdin
+```
+
+PAT at https://github.com/settings/tokens with scopes:
+`write:packages`, `read:packages`, `delete:packages`.
+
+### Portainer webhook
+
+Portainer UI → Stacks → **home-pot** → Settings → enable webhook toggle →
+copy URL into `$PORTAINER_WEBHOOK`.
 
 ---
 
@@ -22,160 +72,121 @@ published to GitHub Container Registry; Portainer pulls and runs the stack.
 
 | Component | Where | Notes |
 |---|---|---|
-| PWA image | `ghcr.io/n3v3r3nds/home-pot-pwa` | Built from [Dockerfile](Dockerfile). Baked at build time with `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`. |
-| Supabase stack | Stock images (postgres, gotrue, postgrest, realtime, kong…) | No build step. Defined in [docker-compose.prod.yml](docker-compose.prod.yml). |
-| Caddy | Shared reverse proxy on server at `/opt/caddy/Caddyfile` | Routes `poker.sexyness.app` → `home-pot-pwa:80` and `/rest|/auth|/realtime|/storage|/functions/*` → `home-pot-kong:8000`. |
-| Portainer | UI at the server | Holds the stack definition + env vars. Webhook triggers redeploy. |
+| PWA | `ghcr.io/n3v3r3nds/home-pot-pwa` | Built from [Dockerfile](Dockerfile). `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` baked at build time. |
+| DB | `ghcr.io/n3v3r3nds/home-pot-db` | Built from [Dockerfile.db](Dockerfile.db). `supabase/postgres:15.6.1.139` + all `supabase/migrations/*` copied into `/docker-entrypoint-initdb.d/` with `zz-` prefix so they run after the image's own role-creation scripts. |
+| Kong config | `ghcr.io/n3v3r3nds/home-pot-kong-config` | Built from [Dockerfile.kong-config](Dockerfile.kong-config). Alpine + envsubst + `supabase/kong.yml` template. Runs once at stack start, writes resolved config to shared volume. |
+| Supabase stack | Stock images | auth (gotrue), rest (postgrest), realtime, studio, meta, kong — all pulled unchanged. See [docker-compose.prod.yml](docker-compose.prod.yml). |
+| Caddy | Shared `/opt/caddy/Caddyfile` | Routes `/rest\|/auth\|/realtime\|/storage\|/functions/*` → `home-pot-kong:8000`, everything else → `home-pot-pwa:80`. |
+| Portainer | Stack `home-pot` (git-backed from `main`) | Env vars set in stack UI. Redeploy = pull `:latest` + recreate. |
 | DNS | Cloudflare | `poker.sexyness.app` CNAME → `home.kudostrainer.com`, proxied. |
 
 All containers join the external Docker network `web` so Caddy can reach them.
 
----
+### Why custom DB + kong-config images?
 
-## Secrets (set in Portainer stack env)
+Portainer-deployed git stacks **can't resolve `./relative-path` bind mounts**.
+Docker daemon looks for those paths on the host filesystem, but the git clone
+lives inside Portainer's container volume — the paths don't line up, so Docker
+auto-creates empty directories and init scripts silently break.
 
-| Var | Source | Notes |
-|---|---|---|
-| `POSTGRES_PASSWORD` | `openssl rand -hex 24` | Postgres superuser password. |
-| `JWT_SECRET` | `openssl rand -hex 32` | Min 32 chars. Signs the two keys below. |
-| `ANON_KEY` | JWT signed with `JWT_SECRET`, claim `role=anon` | Public key embedded in the PWA. |
-| `SERVICE_ROLE_KEY` | JWT signed with `JWT_SECRET`, claim `role=service_role` | Server-side only; full bypass of RLS. |
-| `VITE_SUPABASE_URL` | `https://poker.sexyness.app` | Same-origin so the browser hits Kong via Caddy. |
-| `VITE_SUPABASE_ANON_KEY` | Same value as `ANON_KEY` | Baked into the PWA bundle at build. |
-| `SITE_URL` | `https://poker.sexyness.app` | Used by GoTrue for redirect allow-list. |
-| `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` | Your choice | Supabase Studio basic-auth (not publicly routed, but set anyway). |
-| `PWA_IMAGE` | `ghcr.io/n3v3r3nds/home-pot-pwa:latest` | Override to pin to a specific SHA tag. |
-
-Generate the two JWT keys once (see the anon/service-role blocks in
-[README.md](README.md#quick-start)) and store them in a password manager.
-`VITE_SUPABASE_ANON_KEY` must also be set as a **GitHub Actions secret**
-(or passed as `--build-arg` for manual builds) because it's baked at build time.
-
-### GitHub secrets required for CI
-
-- `VITE_SUPABASE_ANON_KEY` — same value as `ANON_KEY`
-- `PORTAINER_STACK_WEBHOOK_URL` — from Portainer after stack creation
+Baking the files into images sidesteps the whole path-resolution problem.
+Downside: editing a migration means a rebuild. Acceptable since it's rare.
 
 ---
 
-## Deploy flow — manual build & push (fastest)
+## Stack secrets (in Portainer env vars)
 
-Use this for everyday iteration. Assumes one-time setup below is done.
+| Var | Notes |
+|---|---|
+| `POSTGRES_PASSWORD` | Postgres superuser password. Also used by every Supabase service role (set via `00-roles.sh`). |
+| `JWT_SECRET` | 32+ char random. Signs `ANON_KEY` and `SERVICE_ROLE_KEY`. **Losing this breaks every session.** |
+| `ANON_KEY` | Public JWT, `role=anon`. Also set as `VITE_SUPABASE_ANON_KEY` (baked into PWA) — values must match. |
+| `SERVICE_ROLE_KEY` | Admin JWT, `role=service_role`. Server-side only, bypasses RLS. |
+| `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` | Supabase Studio basic-auth. Studio is internal-only (not routed publicly). |
+| `VITE_SUPABASE_URL` | `https://poker.sexyness.app` |
+| `SITE_URL` | `https://poker.sexyness.app` (GoTrue redirect allow-list) |
+| `PWA_IMAGE` / `DB_IMAGE` / `KONG_CONFIG_IMAGE` | Optional override, e.g. `ghcr.io/n3v3r3nds/home-pot-pwa:sha-abc1234` for rollback. Defaults to `:latest`. |
 
-```bash
-docker buildx build --platform linux/amd64 \
-  --build-arg VITE_SUPABASE_URL=https://poker.sexyness.app \
-  --build-arg VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" \
-  -t ghcr.io/n3v3r3nds/home-pot-pwa:latest \
-  --push . \
-&& curl -fsS -X POST "$PORTAINER_WEBHOOK"
-```
-
-`--platform linux/amd64` is required (build host is arm64 Mac, server is x86_64).
-Put `VITE_SUPABASE_ANON_KEY` and `PORTAINER_WEBHOOK` in your shell rc, not in the repo.
-
----
-
-## Deploy flow — CI (push to main)
-
-[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on the org's
-self-hosted runners (`N3v3R3nDs` org, labels `self-hosted,linux,X64,docker`):
-
-1. **lint** — `npm ci` + `npm run lint` + `npm run build` (PRs too).
-2. **pwa** — buildx → push to GHCR with tags `latest` (main only), `sha-<short>`, branch name, git tag.
-3. **deploy** — POSTs `PORTAINER_STACK_WEBHOOK_URL`. Main branch only.
-
-To redeploy without new code: re-run the latest workflow, or `curl` the webhook directly.
-
----
-
-## One-time setup
-
-### 1. GitHub repo + GHCR package
-
-Create repo `N3v3R3nDs/Home-Pot`, push the code. After the first image push,
-make the package public: https://github.com/users/N3v3R3nD/packages/container/home-pot-pwa/settings
-→ "Change visibility" → Public. (Otherwise Portainer needs a pull secret.)
-
-### 2. Local Docker login to GHCR
-
-```bash
-echo "$GH_PAT" | docker login ghcr.io -u N3v3R3nD --password-stdin
-```
-
-PAT needs `write:packages`, `read:packages`.
-
-### 3. Generate Supabase secrets
-
-See [README.md Quick start](README.md#quick-start) — produces `JWT_SECRET`,
-`ANON_KEY`, `SERVICE_ROLE_KEY`. Save them in a password manager.
-
-### 4. Portainer stack
-
-- Stacks → Add stack → name: `home-pot`
-- Build method: **Repository**
-- Repository URL: `https://github.com/N3v3R3nDs/Home-Pot.git`
-- Compose path: `docker-compose.prod.yml`
-- Environment variables: everything from the Secrets table above
-- **Enable webhook** toggle → copy the webhook URL into your shell rc
-  as `PORTAINER_WEBHOOK` (and into the repo's GitHub secret
-  `PORTAINER_STACK_WEBHOOK_URL` if using CI)
-- Deploy
-
-### 5. Caddy block
-
-Append the `poker.sexyness.app` block in [docs/caddy-snippet.caddyfile](docs/caddy-snippet.caddyfile)
-to `/opt/caddy/Caddyfile` on the server, then:
-
-```bash
-ssh server 'docker exec caddy caddy reload --config /etc/caddy/Caddyfile'
-```
-
-### 6. DNS
-
-Already in place — CNAME `poker` → `home.kudostrainer.com`, Proxied, in Cloudflare.
+Stored in 1Password — see shared vault.
 
 ---
 
 ## Verifying a deploy
 
 ```bash
-# container is running and healthy
+# public endpoints reachable
+curl -sI https://poker.sexyness.app | head -1
+curl -sI https://poker.sexyness.app/rest/v1/ -H "apikey: $VITE_SUPABASE_ANON_KEY" | head -1
+
+# containers healthy on the server
 ssh server 'docker ps --filter name=home-pot --format "{{.Names}}\t{{.Status}}"'
 
-# PWA serves
-curl -sI https://poker.sexyness.app | head -1
-
-# Supabase rest endpoint reachable same-origin
-curl -sI https://poker.sexyness.app/rest/v1/ -H "apikey: $VITE_SUPABASE_ANON_KEY" | head -1
+# db init ran cleanly (only needed after fresh volume)
+ssh server 'docker logs home-pot-db 2>&1 | grep -E "ALTER ROLE|CREATE SCHEMA" | head'
 ```
+
+`home-pot-studio` will always show `(unhealthy)` — its healthcheck is strict
+and we don't route to it publicly. Ignore it.
 
 ---
 
 ## Rollback
 
-Find the SHA tag you want on GHCR and override the image in the Portainer
-stack env:
+Find the SHA tag you want on GHCR (GitHub UI → Packages → home-pot-pwa →
+versions), then either:
 
+**A)** Override in Portainer env:
 ```
 PWA_IMAGE=ghcr.io/n3v3r3nds/home-pot-pwa:sha-abc1234
 ```
+Save → "Update the stack" → containers recreate pinned to that SHA.
 
-"Update the stack" in Portainer — containers recreate with the pinned image.
+**B)** Retag and push `latest`:
+```bash
+docker pull ghcr.io/n3v3r3nds/home-pot-pwa:sha-abc1234
+docker tag ghcr.io/n3v3r3nds/home-pot-pwa:sha-abc1234 ghcr.io/n3v3r3nds/home-pot-pwa:latest
+docker push ghcr.io/n3v3r3nds/home-pot-pwa:latest
+curl -X POST "$PORTAINER_WEBHOOK"
+```
 
 ---
 
-## Database migrations
+## Reset (wipe all data)
 
-Bind-mounted from the repo into the `db` container at first boot only
-(see [docker-compose.prod.yml](docker-compose.prod.yml)). To apply a new
-migration on an existing deployment:
+Deletes the DB volume — **every session, player, bank entry lost**. Only for
+hard resets.
 
 ```bash
-ssh server 'docker exec -i home-pot-db psql -U postgres' < supabase/migrations/NN-name.sql
+ssh server 'docker compose -p home-pot down -v'
+# then redeploy via Portainer UI: Stacks → home-pot → Update the stack
 ```
 
-(Or use Studio's SQL editor — same thing with a UI.)
+The `zz-*` init scripts in `home-pot-db` will re-run on the fresh volume.
 
-Postgres data lives in the Docker volume `home-pot_db-data`. Reset with
-`docker compose down -v` **destroys all data** — only do this intentionally.
+---
+
+## Database access for ops
+
+```bash
+ssh server 'docker exec -it home-pot-db psql -U postgres'
+# or for a migration file from the repo:
+ssh server 'docker exec -i home-pot-db psql -U postgres' < supabase/migrations/05-new.sql
+```
+
+For UI access, tunnel Studio (it's on the internal network only):
+```bash
+ssh -L 8001:localhost:8000 server    # then open http://localhost:8001
+# (Studio is served through Kong at /; HTTP Basic with DASHBOARD_USERNAME/PASSWORD)
+```
+
+---
+
+## Adding a new migration
+
+1. Drop a new file in `supabase/migrations/` named `NN-<name>.sql` (next sequential number).
+2. `./scripts/deploy.sh --all` to rebuild the `home-pot-db` image.
+3. **First deploy only** — the migration runs on fresh volumes. On an existing
+   volume, apply it manually once:
+   ```bash
+   ssh server 'docker exec -i home-pot-db psql -U postgres' < supabase/migrations/NN-new.sql
+   ```
