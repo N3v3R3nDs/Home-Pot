@@ -22,7 +22,7 @@ import type { Profile, TournamentPlayer } from '@/types/db';
 export function TournamentLive() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { currency, soundEnabled } = useSettings();
   const { tournament, players, loading } = useTournament(id);
   const clock = useTournamentClock(tournament);
@@ -34,6 +34,7 @@ export function TournamentLive() {
   const [chipUpFromBank, setChipUpFromBank] = useState(false);
   const [claimName, setClaimName] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
+  const autoClaimedRef = useRef(false);
 
   // Lookup display names for joined profiles
   useEffect(() => {
@@ -376,24 +377,48 @@ export function TournamentLive() {
         </Card>
       )}
 
-      {/* SEAT CLAIM — opens automatically for any signed-in user who isn't yet
-          on the roster. Tap an open seat to take it; otherwise add yourself. */}
+      {/* SEAT CLAIM — auto-claims a matching seat when the user lands on the
+          tournament if their stored name matches a roster slot. Otherwise
+          shows a sheet to tap their name. */}
       {(() => {
         const userSeated = !!user && players.some((p) => p.profile_id === user.id);
         const showSeat = !!user && !userSeated && tournament.state !== 'finished';
-        const unclaimed = players.filter((p) => p.profile_id === null);
+        // Anyone except the host can be replaced — the host owns the night.
+        const claimable = players.filter((p) => p.profile_id !== tournament.host_id);
+        const seatName = (p: TournamentPlayer) =>
+          p.guest_name ?? (p.profile_id ? profileMap[p.profile_id]?.display_name : null) ?? 'Open seat';
+        const seatAvatar = (p: TournamentPlayer) =>
+          p.profile_id ? profileMap[p.profile_id]?.avatar_emoji ?? '🃏' : '👤';
+        const userHasRealName = !!profile?.display_name && profile.display_name !== 'Guest';
         const claimSeat = async (p: TournamentPlayer) => {
           if (!user) return;
           await supabase.from('tournament_players')
             .update({ profile_id: user.id, guest_name: null })
             .eq('id', p.id);
-          if (p.guest_name) {
-            await supabase.from('profiles')
-              .update({ display_name: p.guest_name })
-              .eq('id', user.id);
-            await refreshProfile();
+          // Only overwrite the user's display name if they don't have a real one.
+          // Returning friends keep their stored name across nights.
+          if (!userHasRealName) {
+            const newName = seatName(p);
+            if (newName && newName !== 'Open seat') {
+              await supabase.from('profiles')
+                .update({ display_name: newName })
+                .eq('id', user.id);
+              await refreshProfile();
+            }
           }
         };
+
+        // Auto-claim: if the user has a stored name and one of the roster
+        // slots matches it (case-insensitive), claim it silently.
+        if (showSeat && userHasRealName && !autoClaimedRef.current) {
+          const target = claimable.find((p) =>
+            seatName(p).toLowerCase() === profile!.display_name.toLowerCase(),
+          );
+          if (target) {
+            autoClaimedRef.current = true;
+            void claimSeat(target);
+          }
+        }
         const addNew = async () => {
           if (!user || !claimName.trim()) return;
           await supabase.from('tournament_players').insert({
@@ -408,18 +433,18 @@ export function TournamentLive() {
         };
         return (
           <Sheet open={showSeat} onClose={() => { /* required, but UX-wise nothing to dismiss */ }} title="Take your seat">
-            <p className="text-ink-300 text-sm mb-4">Tap your name to claim your seat — your buy-ins, knockouts and prize will all be tracked under it.</p>
-            {unclaimed.length > 0 ? (
+            <p className="text-ink-300 text-sm mb-4">Tap your name on the roster to claim your seat — your buy-ins, knockouts and prize will all be tracked under it.</p>
+            {claimable.length > 0 ? (
               <ul className="space-y-2 mb-4">
-                {unclaimed.map((p) => (
+                {claimable.map((p) => (
                   <li key={p.id}>
                     <button
                       onClick={() => claimSeat(p)}
                       className="w-full flex items-center justify-between bg-felt-900/60 hover:bg-brass-500/15 border border-felt-700 hover:border-brass-500/50 rounded-xl px-4 py-3 text-left transition"
                     >
                       <span className="flex items-center gap-3">
-                        <span className="text-xl">👤</span>
-                        <span className="font-semibold">{p.guest_name ?? 'Open seat'}</span>
+                        <span className="text-xl">{seatAvatar(p)}</span>
+                        <span className="font-semibold">{seatName(p)}</span>
                       </span>
                       <span className="text-brass-300">claim →</span>
                     </button>
@@ -427,7 +452,7 @@ export function TournamentLive() {
                 ))}
               </ul>
             ) : (
-              <p className="text-ink-400 text-sm mb-4">No open seats on the roster.</p>
+              <p className="text-ink-400 text-sm mb-4">No claimable seats on the roster.</p>
             )}
             <div className="border-t border-felt-800 pt-4">
               <p className="label">Not on the list?</p>

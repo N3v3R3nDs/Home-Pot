@@ -1,23 +1,52 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { Sheet } from '@/components/ui/Sheet';
 import { Chip } from '@/components/Chip';
 import { useAuth } from '@/store/auth';
 import { useSettings } from '@/store/settings';
 import { DEFAULT_INVENTORY, DENOMINATIONS, totalChipValue, type Denomination } from '@/lib/chipSet';
 import { formatChips } from '@/lib/format';
 import { THEMES } from '@/lib/themes';
+import { supabase } from '@/lib/supabase';
 
 const EMOJIS = ['🃏', '🎩', '🍀', '🔥', '⚡', '👑', '🦈', '🐉', '🎯', '🚀', '💎', '🧠'];
 const CURRENCIES = ['NOK', 'USD', 'EUR', 'SEK', 'DKK', 'GBP'];
 
 export function Settings() {
-  const { profile, updateProfile, signOut } = useAuth();
+  const { profile, user, updateProfile, signOut } = useAuth();
   const { currency, setCurrency, inventory, setInventory, soundEnabled, toggleSound, theme, setTheme } = useSettings();
   const [name, setName] = useState(profile?.display_name ?? '');
   const [emoji, setEmoji] = useState(profile?.avatar_emoji ?? '🃏');
   const [invDraft, setInvDraft] = useState(inventory);
+
+  // Members directory + PIN reset
+  interface Member { id: string; display_name: string; avatar_emoji: string | null; account_type: 'pin' | 'email' | 'anonymous' | 'unknown'; is_anonymous: boolean; }
+  const [members, setMembers] = useState<Member[]>([]);
+  const [resetting, setResetting] = useState<Member | null>(null);
+  const [newPin, setNewPin] = useState('');
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.from('members').select('*').order('display_name').then(({ data }) => {
+      setMembers((data ?? []) as Member[]);
+    });
+  }, []);
+
+  const submitReset = async () => {
+    if (!resetting || !/^\d{4}$/.test(newPin)) {
+      setResetMsg('PIN must be 4 digits');
+      return;
+    }
+    const { error } = await supabase.rpc('reset_member_pin', {
+      p_user_id: resetting.id, p_new_pin: newPin,
+    });
+    if (error) { setResetMsg(error.message); return; }
+    setResetMsg(`✓ ${resetting.display_name}'s PIN is now ${newPin}. Tell them to sign in with that.`);
+    setNewPin('');
+    setTimeout(() => { setResetting(null); setResetMsg(null); }, 4000);
+  };
 
   const saveProfile = async () => {
     await updateProfile({ display_name: name, avatar_emoji: emoji });
@@ -128,8 +157,65 @@ export function Settings() {
       </Card>
 
       <Card>
+        <p className="label">Members</p>
+        <p className="text-xs text-ink-400 mb-3">
+          Tap a quick-join member to reset their PIN. Their account, stats and bank balance are preserved — only the PIN changes.
+        </p>
+        <ul className="divide-y divide-felt-800">
+          {members.filter((m) => !m.is_anonymous).map((m) => {
+            const isMe = m.id === user?.id;
+            return (
+              <li key={m.id} className="flex items-center justify-between py-2.5">
+                <span className="flex items-center gap-3">
+                  <span className="text-xl">{m.avatar_emoji ?? '🃏'}</span>
+                  <span>
+                    <div className="font-semibold">{m.display_name} {isMe && <span className="text-xs text-brass-300">(you)</span>}</div>
+                    <div className="text-[10px] uppercase tracking-widest text-ink-500">
+                      {m.account_type === 'pin' ? 'quick-join · PIN' : m.account_type === 'email' ? 'email · password' : m.account_type}
+                    </div>
+                  </span>
+                </span>
+                {m.account_type === 'pin' && !isMe && (
+                  <Button variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={() => { setResetting(m); setNewPin(''); setResetMsg(null); }}>
+                    🔑 Reset PIN
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+          {members.filter((m) => !m.is_anonymous).length === 0 && (
+            <li className="py-2 text-ink-400 text-sm">No members yet.</li>
+          )}
+        </ul>
+      </Card>
+
+      <Card>
         <Button variant="danger" full onClick={signOut}>Sign out</Button>
       </Card>
+
+      <Sheet open={!!resetting} onClose={() => { setResetting(null); setNewPin(''); setResetMsg(null); }}
+             title={resetting ? `Reset PIN for ${resetting.display_name}` : ''}>
+        <p className="text-ink-300 text-sm mb-4">
+          Pick a new 4-digit PIN. Their stats, bank balance and tournament history are <b>not</b> affected — they just sign in with this PIN from now on.
+        </p>
+        <input
+          value={newPin}
+          onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+          placeholder="••••"
+          inputMode="numeric"
+          autoComplete="off"
+          className="w-full text-center font-mono text-3xl tracking-[0.5em] bg-felt-900/80 border-2 border-felt-700/60 rounded-xl py-3 text-ink-50 focus:outline-none focus:border-brass-400/60"
+          maxLength={4}
+        />
+        {resetMsg && (
+          <p className={`mt-3 text-sm text-center ${resetMsg.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'}`}>
+            {resetMsg}
+          </p>
+        )}
+        <Button full className="mt-4" onClick={submitReset} disabled={!/^\d{4}$/.test(newPin)}>
+          Set new PIN
+        </Button>
+      </Sheet>
     </div>
   );
 }

@@ -23,6 +23,25 @@ const std = (level: number, sb: number, bb: number, durationMin = 20, ante = 0, 
 
 export const BLIND_TEMPLATES: BlindTemplate[] = [
   {
+    id: 'home-night',
+    name: 'Home Night',
+    description: '~2 hours · 12 min levels · for a normal evening with friends',
+    recommendedStack: 5000,
+    levels: [
+      std(1, 25, 50, 12),
+      std(2, 50, 100, 12),
+      std(3, 75, 150, 12),
+      std(4, 100, 200, 12, 0, true, 8),
+      std(5, 150, 300, 12),
+      std(6, 200, 400, 12, 50),
+      std(7, 300, 600, 12, 100),
+      std(8, 500, 1000, 12, 100),
+      std(9, 800, 1600, 12, 200),
+      std(10, 1500, 3000, 12, 300),
+      std(11, 2500, 5000, 12, 500),
+    ],
+  },
+  {
     id: 'quickfire',
     name: 'Quickfire',
     description: '~2.5 hours · 12 min levels · perfect for a Tuesday',
@@ -102,5 +121,27 @@ export const BLIND_TEMPLATES: BlindTemplate[] = [
 ];
 
 export function templateById(id: string): BlindTemplate {
-  return BLIND_TEMPLATES.find((t) => t.id === id) ?? BLIND_TEMPLATES[1];
+  return BLIND_TEMPLATES.find((t) => t.id === id) ?? BLIND_TEMPLATES[0];
+}
+
+/** Sum of every level's duration plus break time, in minutes. */
+export function totalDurationMin(t: BlindTemplate): number {
+  return t.levels.reduce(
+    (s, l) => s + l.durationMin + (l.breakAfter ? (l.breakMin ?? 10) : 0),
+    0,
+  );
+}
+
+/** Pick a sensible default template for a given player count.
+ *  Smaller fields finish faster, so we don't need a deep-stack marathon. */
+export function recommendedTemplateId(players: number): string {
+  if (players <= 6) return 'home-night';
+  if (players <= 10) return 'standard';
+  return 'deepstack';
+}
+
+/** "21:48" formatted finish time given start = now and template duration. */
+export function estimatedFinishTime(t: BlindTemplate, from: Date = new Date()): string {
+  const finish = new Date(from.getTime() + totalDurationMin(t) * 60_000);
+  return finish.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
 }

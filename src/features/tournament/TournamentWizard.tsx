@@ -8,7 +8,7 @@ import { Chip } from '@/components/Chip';
 import { useAuth } from '@/store/auth';
 import { useSettings } from '@/store/settings';
 import { supabase } from '@/lib/supabase';
-import { BLIND_TEMPLATES, templateById } from './BlindStructures';
+import { BLIND_TEMPLATES, estimatedFinishTime, recommendedTemplateId, templateById, totalDurationMin } from './BlindStructures';
 import { PAYOUT_PRESETS, presetById } from './payouts';
 import { generateJoinCode } from '@/lib/joinCode';
 import {
@@ -46,19 +46,26 @@ export function TournamentWizard() {
   const [profilesLoaded, setProfilesLoaded] = useState(false);
 
   // structure
-  const [templateId, setTemplateId] = useState('standard');
+  const [templateId, setTemplateId] = useState('home-night');
+  const [autoTemplate, setAutoTemplate] = useState(true);
   const [payoutPresetId, setPayoutPresetId] = useState('standard');
   const [stackSize, setStackSize] = useState(0);
 
   const playerCount = picked.length;
+  const recommendedId = recommendedTemplateId(playerCount);
 
-  const template = useMemo(() => templateById(templateId), [templateId]);
+  // Auto-follow the recommendation until the user picks something explicitly.
+  const effectiveTemplateId = autoTemplate ? recommendedId : templateId;
+  const template = useMemo(() => templateById(effectiveTemplateId), [effectiveTemplateId]);
   const payoutPreset = useMemo(() => presetById(payoutPresetId), [payoutPresetId]);
 
   const effectiveStack = stackSize || (playerCount > 0 ? suggestStackSize(inventory, playerCount) : template.recommendedStack);
+  const smallestBlind = (template.levels[0]?.sb ?? 25) as Denomination;
   const stackSuggestion = useMemo(
-    () => playerCount > 0 ? suggestStartingStack(inventory, playerCount, effectiveStack) : null,
-    [inventory, playerCount, effectiveStack],
+    () => playerCount > 0
+      ? suggestStartingStack(inventory, playerCount, effectiveStack, { smallestChip: smallestBlind })
+      : null,
+    [inventory, playerCount, effectiveStack, smallestBlind],
   );
   const payoutSlots = useMemo(() => payoutPreset.pick(Math.max(playerCount, 1)), [payoutPreset, playerCount]);
   const totalPool = playerCount * (buyIn - bountyAmount);
@@ -244,21 +251,50 @@ export function TournamentWizard() {
       {step === 'structure' && (
         <div className="space-y-4">
           <Card>
-            <p className="label">Blind structure</p>
-            <div className="grid grid-cols-3 gap-2">
-              {BLIND_TEMPLATES.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => { setTemplateId(t.id); if (!stackSize) setStackSize(t.recommendedStack); }}
-                  className={`rounded-xl p-3 text-left border transition ${
-                    templateId === t.id ? 'bg-brass-500/15 border-brass-500/50' : 'bg-felt-900/60 border-felt-700/60'
-                  }`}
-                >
-                  <div className="font-display text-lg text-brass-200">{t.name}</div>
-                  <div className="text-[10px] text-ink-400 leading-tight">{t.description}</div>
-                </button>
-              ))}
+            <div className="flex items-center justify-between mb-2">
+              <p className="label !mb-0">Blind structure</p>
+              <span className="text-[10px] text-ink-400">
+                ≈ {totalDurationMin(template)} min · ends ~{estimatedFinishTime(template)}
+              </span>
             </div>
+            <div className="grid grid-cols-2 gap-2">
+              {BLIND_TEMPLATES.map((t) => {
+                const active = effectiveTemplateId === t.id;
+                const recommended = t.id === recommendedId;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      setAutoTemplate(false);
+                      setTemplateId(t.id);
+                      if (!stackSize) setStackSize(t.recommendedStack);
+                    }}
+                    className={`relative rounded-xl p-3 text-left border transition ${
+                      active ? 'bg-brass-500/15 border-brass-500/50' : 'bg-felt-900/60 border-felt-700/60'
+                    }`}
+                  >
+                    {recommended && (
+                      <span className="absolute -top-2 right-2 pill bg-brass-500 text-felt-950 text-[9px]">
+                        recommended
+                      </span>
+                    )}
+                    <div className="font-display text-lg text-brass-200">{t.name}</div>
+                    <div className="text-[10px] text-ink-400 leading-tight">{t.description}</div>
+                    <div className="text-[10px] text-brass-300 mt-1 font-mono">
+                      ≈ {totalDurationMin(t)} min · ~{estimatedFinishTime(t)}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {!autoTemplate && effectiveTemplateId !== recommendedId && (
+              <button
+                onClick={() => setAutoTemplate(true)}
+                className="text-[11px] text-ink-400 underline mt-2"
+              >
+                ↩ use recommended for {playerCount} players
+              </button>
+            )}
           </Card>
 
           <Card>

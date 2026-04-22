@@ -50,6 +50,8 @@ services:
       - ./supabase/migrations/02-collab.sql:/docker-entrypoint-initdb.d/zz-02-collab.sql
       - ./supabase/migrations/03-bank.sql:/docker-entrypoint-initdb.d/zz-03-bank.sql
       - ./supabase/migrations/04-join-codes.sql:/docker-entrypoint-initdb.d/zz-04-join-codes.sql
+      - ./supabase/migrations/05-member-admin.sql:/docker-entrypoint-initdb.d/zz-05-member-admin.sql
+      - ./supabase/migrations/06-preserve-player-history.sql:/docker-entrypoint-initdb.d/zz-06-preserve-player-history.sql
     ports:
       - "54322:5432"
 
@@ -88,8 +90,10 @@ services:
       GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
       GOTRUE_MAILER_AUTOCONFIRM: "true"  # friend-group convenience: skip email verification
       GOTRUE_SMS_AUTOCONFIRM: "true"
-      # Allow anonymous sign-ins so friends can quick-join with just a code.
+      # Allow anonymous sign-ins (used for legacy quick-join sessions only)
       GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "true"
+      # Allow 4-digit PINs (default is 6) — PIN is the friend-join password
+      GOTRUE_PASSWORD_MIN_LENGTH: "4"
 
   # --------------------------------------------------------------- Realtime
   realtime:

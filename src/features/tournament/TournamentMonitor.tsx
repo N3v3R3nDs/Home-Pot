@@ -64,35 +64,30 @@ export function TournamentMonitor() {
   const joinUrl = typeof window !== 'undefined'
     ? `${window.location.origin}/tournament/${tournament.id}`
     : '';
-  const isLocalhost = typeof window !== 'undefined' &&
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
   return (
     <div className="fixed inset-0 bg-felt-radial overflow-hidden text-ink-50">
-      {/* Top bar — hidden in fullscreen */}
+      {/* Top bar — sits in flow (not absolute) so it never overlaps content.
+          Compact on portrait phones: title truncates, controls icon-only. */}
       {!clean && (
-        <header className="absolute top-0 inset-x-0 z-20 flex items-center justify-between px-6 pt-4 pt-safe">
-          <Link to={`/tournament/${tournament.id}`} className="font-display text-2xl text-brass-shine">
+        <header className="absolute top-0 inset-x-0 z-20 flex items-center justify-between gap-2 px-3 sm:px-6 pt-3 pt-safe">
+          <Link to={`/tournament/${tournament.id}`} className="font-display text-lg sm:text-2xl text-brass-shine truncate min-w-0">
             ← {tournament.name}
           </Link>
-          <div className="flex items-center gap-3 text-sm text-ink-300">
-            <span className="pill bg-felt-800/70 border border-felt-700">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="pill bg-felt-800/70 border border-felt-700 hidden sm:inline-flex">
               {tournament.state.toUpperCase()}
             </span>
             <button
               onClick={() => setHideQr((v) => !v)}
-              className="pill bg-felt-800/70 border border-felt-700 text-ink-200"
-              title="Toggle QR code"
-            >
-              {hideQr ? 'show qr' : 'hide qr'}
-            </button>
+              className="w-9 h-9 grid place-items-center rounded-full bg-felt-800/70 border border-felt-700 text-ink-200"
+              title={hideQr ? 'Show QR' : 'Hide QR'}
+            >{hideQr ? '◫' : '⊟'}</button>
             <button
               onClick={toggleFullscreen}
-              className="pill bg-brass-500/20 border border-brass-500/40 text-brass-100"
+              className="w-9 h-9 grid place-items-center rounded-full bg-brass-500/20 border border-brass-500/40 text-brass-100"
               title="Fullscreen (Esc to exit)"
-            >
-              ⛶ fullscreen
-            </button>
+            >⛶</button>
           </div>
         </header>
       )}
@@ -175,74 +170,84 @@ export function TournamentMonitor() {
           </div>
         </div>
       ) : (
-        // ─── PORTRAIT: stacked vertically with a 4-card stats strip on top ───
-        <div className={`absolute inset-0 grid grid-rows-[auto_minmax(0,1fr)_auto] gap-3 px-4 ${clean ? 'py-4' : 'pt-20 pb-4'}`}>
-          <div className="grid grid-cols-4 gap-2">
-            <BigStat label="Players left" value={`${alive.length}`} sub={`of ${players.length}`} />
-            <BigStat label="Avg stack" value={formatChips(avgStack)} sub="chips" />
-            <BigStat label="Prize pool" value={formatMoney(prizePool, currency)} sub={tournament.bounty_amount ? `+ ${formatMoney(tournament.bounty_amount * (buyIns + rebuys), currency)} bounty` : ''} />
-            <BigStat label="Total chips" value={formatChips(totalChips)} sub={`${buyIns}/${rebuys}/${addons}`} />
+        // ─── PORTRAIT: pure flex column. Stats on top, clock fills, payouts
+        //               and alive ticker stack at the bottom. No side column. ─
+        <div className={`absolute inset-0 flex flex-col gap-3 px-3 ${clean ? 'py-3' : 'pt-16 pb-3'}`}>
+          {/* Compact 4-col stats — text shrinks to fit narrow phones */}
+          <div className="grid grid-cols-4 gap-1.5 shrink-0">
+            <TightStat label="Players" value={`${alive.length}/${players.length}`} />
+            <TightStat label="Avg" value={formatChips(avgStack)} />
+            <TightStat label="Pool" value={formatMoney(prizePool, currency)} />
+            <TightStat label="Chips" value={formatChips(totalChips)} />
           </div>
 
-          {/* Clock area + payouts on the right */}
-          <div className="grid grid-cols-[1fr_auto] gap-3 min-h-0">
-            <div className="flex flex-col items-center justify-center text-center min-h-0">
-              <div className="text-brass-300/70 uppercase tracking-[0.4em] text-xs mb-1">Level {clock.level?.level ?? 0}</div>
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={clock.levelIndex}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="font-display leading-none text-brass-shine"
-                  style={{ fontSize: 'clamp(3rem, 14vmin, 14rem)' }}
-                >
-                  {clock.level ? `${clock.level.sb}/${clock.level.bb}` : '🏁'}
-                </motion.div>
-              </AnimatePresence>
-              {clock.level?.ante ? (
-                <div className="text-ink-300 mt-1" style={{ fontSize: 'clamp(0.85rem, 2.5vmin, 1.5rem)' }}>
-                  ante {clock.level.ante}
-                </div>
-              ) : null}
-              <motion.div
-                className="font-mono leading-none mt-3 tabular-nums"
-                style={{ fontSize: 'clamp(4rem, 22vmin, 22rem)' }}
-                animate={danger ? { color: ['#ffffff', '#f87171', '#ffffff'] } : { color: '#ffffff' }}
-                transition={{ duration: 1, repeat: Infinity }}
-              >
-                {formatDuration(clock.msRemaining)}
-              </motion.div>
-              {nextLevel && (
-                <div className="text-ink-300 mt-2" style={{ fontSize: 'clamp(0.75rem, 2vmin, 1.25rem)' }}>
-                  Next: <span className="text-brass-200 font-semibold">{nextLevel.sb}/{nextLevel.bb}</span>
-                  {nextLevel.breakAfter ? ' (break after)' : ''}
-                </div>
-              )}
+          {/* Clock fills the available height */}
+          <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center">
+            <div
+              className="text-brass-300/80 uppercase tracking-[0.5em] font-semibold"
+              style={{ fontSize: 'clamp(0.7rem, 2.5vmin, 1.25rem)' }}
+            >
+              Level {clock.level?.level ?? 0}
             </div>
-            <div className="card-felt p-3 w-[180px] overflow-y-auto no-scrollbar">
-              <p className="label">Payouts</p>
-              <ul className="space-y-1.5">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={clock.levelIndex}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="font-display leading-none text-brass-shine mt-1"
+                style={{ fontSize: 'clamp(2.75rem, 14vmin, 11rem)' }}
+              >
+                {clock.level ? `${clock.level.sb}/${clock.level.bb}` : '🏁'}
+              </motion.div>
+            </AnimatePresence>
+            {clock.level?.ante ? (
+              <div className="text-ink-300 mt-1" style={{ fontSize: 'clamp(0.75rem, 2vmin, 1.1rem)' }}>
+                ante {clock.level.ante}
+              </div>
+            ) : null}
+            <motion.div
+              className="font-mono leading-none mt-3 tabular-nums"
+              style={{ fontSize: 'clamp(4.5rem, 24vmin, 18rem)' }}
+              animate={danger ? { color: ['#ffffff', '#f87171', '#ffffff'] } : { color: '#ffffff' }}
+              transition={{ duration: 1, repeat: Infinity }}
+            >
+              {formatDuration(clock.msRemaining)}
+            </motion.div>
+            {nextLevel && (
+              <div className="text-ink-300 mt-2" style={{ fontSize: 'clamp(0.75rem, 2vmin, 1.1rem)' }}>
+                Next: <span className="text-brass-200 font-semibold">{nextLevel.sb}/{nextLevel.bb}</span>
+                {nextLevel.breakAfter ? ' (break)' : ''}
+              </div>
+            )}
+          </div>
+
+          {/* Payouts as horizontal pills (only top 3 visible, rest scroll) */}
+          {payouts.length > 0 && (
+            <div className="shrink-0 overflow-x-auto no-scrollbar">
+              <div className="flex gap-2 justify-center min-w-max px-2">
                 {payouts.map((p) => (
-                  <li key={p.place} className="flex items-center justify-between bg-felt-950/60 rounded-lg px-2 py-1.5 text-sm">
+                  <div key={p.place} className="shrink-0 bg-felt-950/70 border border-felt-800 rounded-xl px-3 py-1.5 flex items-center gap-2 text-sm">
                     <span>{p.place === 1 ? '🥇' : p.place === 2 ? '🥈' : p.place === 3 ? '🥉' : formatPlace(p.place)}</span>
                     <span className="font-mono text-brass-200">{formatMoney(p.percent, currency)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          {/* Bottom: alive players ticker — shown only in portrait */}
-          <div className="overflow-x-auto no-scrollbar">
-            <div className="flex gap-2">
-              {alive.map((p) => (
-                <div key={p.id} className="shrink-0 bg-felt-950/60 border border-felt-800 rounded-xl px-3 py-2 text-sm">
-                  <div className="font-semibold">{p.guest_name ?? '🃏'}</div>
-                  <div className="text-xs text-ink-400">
-                    {p.rebuys > 0 && `🔁${p.rebuys} `}
-                    {p.bounties_won > 0 && `💀${p.bounties_won}`}
                   </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Alive players ticker */}
+          <div className="shrink-0 overflow-x-auto no-scrollbar">
+            <div className="flex gap-1.5">
+              {alive.map((p) => (
+                <div key={p.id} className="shrink-0 bg-felt-950/60 border border-felt-800 rounded-lg px-2.5 py-1.5 text-xs">
+                  <div className="font-semibold">{p.guest_name ?? '🃏'}</div>
+                  {(p.rebuys > 0 || p.bounties_won > 0) && (
+                    <div className="text-[10px] text-ink-400">
+                      {p.rebuys > 0 && `🔁${p.rebuys} `}
+                      {p.bounties_won > 0 && `💀${p.bounties_won}`}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -250,44 +255,24 @@ export function TournamentMonitor() {
         </div>
       )}
 
-      {/* JOIN — bottom-left corner so it doesn't cover the right-side panel.
-          Tiny in landscape, full-size in portrait. */}
+      {/* JOIN — corner badge. Tiny in both orientations so it never covers the
+          clock or eats into the layout. Tap header "show QR" to toggle. */}
       {!hideQr && (
-        <div className={`absolute z-10 ${
-          orientation === 'landscape' ? 'bottom-2 left-2' : 'bottom-4 left-4'
-        } flex items-center gap-3 bg-felt-950/85 backdrop-blur-sm border border-felt-700/60 rounded-2xl p-2 ${
+        <div className={`absolute z-10 bottom-2 left-2 flex items-center gap-2 bg-felt-950/85 backdrop-blur-sm border border-felt-700/60 rounded-xl p-1.5 ${
           clean ? 'opacity-80 hover:opacity-100 transition' : ''
         }`}>
-          <div className="text-left">
-            <div className="text-[9px] uppercase tracking-[0.3em] text-brass-300">Join</div>
+          <div className="text-left pl-1">
+            <div className="text-[9px] uppercase tracking-[0.3em] text-brass-300 leading-none">Join</div>
             <div
-              className="font-display tracking-[0.3em] text-brass-shine leading-none"
-              style={{ fontSize: orientation === 'landscape' ? 'clamp(1rem, 4vmin, 2rem)' : 'clamp(1.5rem, 8vmin, 3rem)' }}
+              className="font-display tracking-[0.25em] text-brass-shine leading-none"
+              style={{ fontSize: 'clamp(0.95rem, 3.5vmin, 1.6rem)' }}
             >
               {tournament.join_code ?? '—'}
             </div>
-            {orientation === 'portrait' && isLocalhost && (
-              <div className="text-[9px] text-amber-400 mt-1">Open via LAN IP</div>
-            )}
           </div>
-          <QRCode value={joinUrl} size={orientation === 'landscape' ? 56 : (clean ? 80 : 110)} />
+          <QRCode value={joinUrl} size={56} />
         </div>
       )}
-    </div>
-  );
-}
-
-function BigStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="card-felt p-3 text-center min-w-0">
-      <div className="text-[10px] uppercase tracking-[0.3em] text-ink-400 truncate">{label}</div>
-      <div
-        className="font-display text-brass-shine mt-1 tabular-nums truncate"
-        style={{ fontSize: 'clamp(1.25rem, 5vmin, 3rem)' }}
-      >
-        {value}
-      </div>
-      {sub && <div className="text-[10px] text-ink-400 mt-1 truncate">{sub}</div>}
     </div>
   );
 }
@@ -297,6 +282,20 @@ function CompactStat({ label, value }: { label: string; value: string }) {
     <div className="card-felt px-3 py-2 flex items-center justify-between min-w-0">
       <div className="text-[10px] uppercase tracking-widest text-ink-400 truncate">{label}</div>
       <div className="font-display text-brass-shine tabular-nums truncate" style={{ fontSize: 'clamp(0.95rem, 3.5vmin, 1.5rem)' }}>{value}</div>
+    </div>
+  );
+}
+
+function TightStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="card-felt px-2 py-1.5 text-center min-w-0">
+      <div className="text-[9px] uppercase tracking-widest text-ink-400 truncate">{label}</div>
+      <div
+        className="font-display text-brass-shine tabular-nums truncate leading-tight"
+        style={{ fontSize: 'clamp(0.85rem, 4vw, 1.25rem)' }}
+      >
+        {value}
+      </div>
     </div>
   );
 }
