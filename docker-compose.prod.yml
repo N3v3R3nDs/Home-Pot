@@ -1,0 +1,239 @@
+# Home Pot — production stack (Portainer-deployed)
+# Renders from the Git repo. Run by Portainer with env vars set in the stack UI.
+# See DEPLOYMENT.md for full deploy flow.
+
+name: home-pot
+
+services:
+  # --------------------------------------------------------------------- PWA
+  pwa:
+    image: ${PWA_IMAGE:-ghcr.io/n3v3r3nds/home-pot-pwa:latest}
+    container_name: home-pot-pwa
+    restart: unless-stopped
+    depends_on:
+      - kong
+    networks:
+      - internal
+      - web
+    expose:
+      - "80"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  # ---------------------------------------------------------------- Postgres
+  db:
+    image: supabase/postgres:15.6.1.139
+    container_name: home-pot-db
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP: 3600
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./supabase/migrations/00-roles.sh:/docker-entrypoint-initdb.d/zz-00-roles.sh:ro
+      - ./supabase/migrations/01-init.sql:/docker-entrypoint-initdb.d/zz-01-init.sql:ro
+      - ./supabase/migrations/02-collab.sql:/docker-entrypoint-initdb.d/zz-02-collab.sql:ro
+      - ./supabase/migrations/03-bank.sql:/docker-entrypoint-initdb.d/zz-03-bank.sql:ro
+      - ./supabase/migrations/04-join-codes.sql:/docker-entrypoint-initdb.d/zz-04-join-codes.sql:ro
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ------------------------------------------------------------ PostgREST API
+  rest:
+    image: postgrest/postgrest:v12.2.0
+    container_name: home-pot-rest
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public,storage
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
+    networks:
+      - internal
+
+  # ------------------------------------------------------------ Auth (GoTrue)
+  auth:
+    image: supabase/gotrue:v2.158.1
+    container_name: home-pot-auth
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${VITE_SUPABASE_URL}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      GOTRUE_SITE_URL: ${SITE_URL}
+      GOTRUE_URI_ALLOW_LIST: ${SITE_URL}
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_SMS_AUTOCONFIRM: "true"
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "true"
+    networks:
+      - internal
+
+  # --------------------------------------------------------------- Realtime
+  realtime:
+    image: supabase/realtime:v2.30.34
+    container_name: home-pot-realtime
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: postgres
+      DB_AFTER_CONNECT_QUERY: 'SET search_path TO _realtime'
+      DB_ENC_KEY: supabaserealtime
+      API_JWT_SECRET: ${JWT_SECRET}
+      SECRET_KEY_BASE: ${REALTIME_SECRET_KEY_BASE:-UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq}
+      APP_NAME: realtime
+      ERL_AFLAGS: -proto_dist inet_tcp
+      RLIMIT_NOFILE: "10000"
+      DNS_NODES: "''"
+      SEED_SELF_HOST: "true"
+      RUN_JANITOR: "true"
+    networks:
+      - internal
+
+  # --------------------------------------------------------- Studio (Admin UI)
+  # Not publicly routed. Reach via: ssh -L 8001:home-pot-kong:8000 server
+  studio:
+    image: supabase/studio:20240729-ce42139
+    container_name: home-pot-studio
+    restart: unless-stopped
+    depends_on:
+      - kong
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DEFAULT_ORGANIZATION_NAME: Home Pot
+      DEFAULT_PROJECT_NAME: Home Pot
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_PUBLIC_URL: ${VITE_SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+    networks:
+      - internal
+
+  # ------------------------------------------------------------------- Meta
+  meta:
+    image: supabase/postgres-meta:v0.83.2
+    container_name: home-pot-meta
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - internal
+
+  # ----------------------------------------------------- Kong config resolver
+  # Renders kong.yml with env-substituted ANON_KEY / SERVICE_ROLE_KEY.
+  kong-config:
+    image: alpine:3.20
+    container_name: home-pot-kong-config
+    command:
+      - sh
+      - -c
+      - |
+        apk add --no-cache gettext >/dev/null &&
+        envsubst < /template/kong.yml > /resolved/kong.yml &&
+        echo "Kong config rendered."
+    environment:
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+    volumes:
+      - ./supabase/kong.yml:/template/kong.yml:ro
+      - kong-config:/resolved
+    restart: "no"
+
+  # --------------------------------------------------------- Kong API gateway
+  kong:
+    image: kong:2.8.1
+    container_name: home-pot-kong
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+    volumes:
+      - kong-config:/var/lib/kong:ro
+    depends_on:
+      kong-config:
+        condition: service_completed_successfully
+      auth:
+        condition: service_started
+      rest:
+        condition: service_started
+      realtime:
+        condition: service_started
+      meta:
+        condition: service_started
+    networks:
+      - internal
+      - web
+    expose:
+      - "8000"
+
+volumes:
+  db-data:
+  kong-config:
+
+networks:
+  web:
+    external: true
+  internal:
+    driver: bridge

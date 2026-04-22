@@ -1,0 +1,35 @@
+# Append to /opt/caddy/Caddyfile on the home server, then:
+#   ssh server 'docker exec caddy caddy reload --config /etc/caddy/Caddyfile'
+#
+# Requires the home-pot stack to be running and joined to the external `web`
+# network (docker-compose.prod.yml does this).
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Home Pot — poker tournament PWA (sexyness.app subdomain)
+poker.sexyness.app {
+	encode gzip
+
+	# Supabase gateway (PostgREST, GoTrue auth, Realtime, Storage, Functions)
+	@supabase path /rest/* /auth/* /realtime/* /storage/* /functions/*
+	handle @supabase {
+		reverse_proxy home-pot-kong:8000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote}
+		}
+	}
+
+	handle {
+		reverse_proxy home-pot-pwa:80 {
+			header_up Host {host}
+			header_up X-Real-IP {remote}
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer-when-downgrade"
+		X-XSS-Protection "1; mode=block"
+	}
+}
