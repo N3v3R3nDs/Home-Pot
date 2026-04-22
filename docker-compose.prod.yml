@@ -36,8 +36,10 @@ services:
           memory: 64M
 
   # ---------------------------------------------------------------- Postgres
+  # Migrations baked into the image via Dockerfile.db (no bind mounts for
+  # Portainer compatibility).
   db:
-    image: supabase/postgres:15.6.1.139
+    image: ${DB_IMAGE:-ghcr.io/n3v3r3nds/home-pot-db:latest}
     container_name: home-pot-db
     restart: unless-stopped
     security_opt:
@@ -54,11 +56,6 @@ services:
       JWT_EXP: 3600
     volumes:
       - db-data:/var/lib/postgresql/data
-      - ./supabase/migrations/00-roles.sh:/docker-entrypoint-initdb.d/zz-00-roles.sh:ro
-      - ./supabase/migrations/01-init.sql:/docker-entrypoint-initdb.d/zz-01-init.sql:ro
-      - ./supabase/migrations/02-collab.sql:/docker-entrypoint-initdb.d/zz-02-collab.sql:ro
-      - ./supabase/migrations/03-bank.sql:/docker-entrypoint-initdb.d/zz-03-bank.sql:ro
-      - ./supabase/migrations/04-join-codes.sql:/docker-entrypoint-initdb.d/zz-04-join-codes.sql:ro
     networks:
       - internal
     deploy:
@@ -179,21 +176,14 @@ services:
 
   # ----------------------------------------------------- Kong config resolver
   # Renders kong.yml with env-substituted ANON_KEY / SERVICE_ROLE_KEY.
+  # Template baked into the image via Dockerfile.kong-config.
   kong-config:
-    image: alpine:3.20
+    image: ${KONG_CONFIG_IMAGE:-ghcr.io/n3v3r3nds/home-pot-kong-config:latest}
     container_name: home-pot-kong-config
-    command:
-      - sh
-      - -c
-      - |
-        apk add --no-cache gettext >/dev/null &&
-        envsubst < /template/kong.yml > /resolved/kong.yml &&
-        echo "Kong config rendered."
     environment:
       ANON_KEY: ${ANON_KEY}
       SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
     volumes:
-      - ./supabase/kong.yml:/template/kong.yml:ro
       - kong-config:/resolved
     restart: "no"
 

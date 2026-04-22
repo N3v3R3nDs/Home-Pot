@@ -1,0 +1,13 @@
+# Postgres with Home Pot migrations baked in.
+# Avoids relative bind mounts which don't resolve correctly under Portainer.
+FROM supabase/postgres:15.6.1.139
+
+# zz- prefix ensures these run after the image's own /docker-entrypoint-initdb.d
+# scripts (which create supabase roles).
+COPY supabase/migrations/00-roles.sh    /docker-entrypoint-initdb.d/zz-00-roles.sh
+COPY supabase/migrations/01-init.sql    /docker-entrypoint-initdb.d/zz-01-init.sql
+COPY supabase/migrations/02-collab.sql  /docker-entrypoint-initdb.d/zz-02-collab.sql
+COPY supabase/migrations/03-bank.sql    /docker-entrypoint-initdb.d/zz-03-bank.sql
+COPY supabase/migrations/04-join-codes.sql /docker-entrypoint-initdb.d/zz-04-join-codes.sql
+
+RUN chmod +x /docker-entrypoint-initdb.d/zz-00-roles.sh

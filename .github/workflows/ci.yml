@@ -19,6 +19,8 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   PWA_IMAGE: ghcr.io/n3v3r3nds/home-pot-pwa
+  DB_IMAGE: ghcr.io/n3v3r3nds/home-pot-db
+  KONG_CONFIG_IMAGE: ghcr.io/n3v3r3nds/home-pot-kong-config
 
 jobs:
   # ---- Lint (runs on PRs and pushes) ----
@@ -90,9 +92,93 @@ jobs:
           cache-from: type=registry,ref=${{ env.PWA_IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.PWA_IMAGE }}:buildcache,mode=max
 
+  # ---- Build & push DB image (migrations baked in) ----
+  db:
+    needs: [lint]
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: [self-hosted, linux, X64, docker]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: DB meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DB_IMAGE }}
+          tags: |
+            type=ref,event=branch,branch=main
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+            type=ref,event=tag
+
+      - name: Build & push DB
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.db
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.DB_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.DB_IMAGE }}:buildcache,mode=max
+
+  # ---- Build & push Kong-config image ----
+  kong-config:
+    needs: [lint]
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: [self-hosted, linux, X64, docker]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Kong-config meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.KONG_CONFIG_IMAGE }}
+          tags: |
+            type=ref,event=branch,branch=main
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+            type=ref,event=tag
+
+      - name: Build & push Kong-config
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.kong-config
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.KONG_CONFIG_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.KONG_CONFIG_IMAGE }}:buildcache,mode=max
+
   # ---- Trigger Portainer redeploy (main only) ----
   deploy:
-    needs: [pwa]
+    needs: [pwa, db, kong-config]
     if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     runs-on: [self-hosted, linux, X64, docker]
     env:

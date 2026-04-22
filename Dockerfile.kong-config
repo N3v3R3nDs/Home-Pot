@@ -1,0 +1,8 @@
+# Kong declarative config renderer.
+# Runs envsubst over the template at startup, writing the resolved file to a
+# shared volume that the Kong service reads from. Image bundles the template so
+# no bind mounts are needed (Portainer-compatible).
+FROM alpine:3.20
+RUN apk add --no-cache gettext
+COPY supabase/kong.yml /template/kong.yml
+CMD envsubst < /template/kong.yml > /resolved/kong.yml && echo "Kong config rendered."
