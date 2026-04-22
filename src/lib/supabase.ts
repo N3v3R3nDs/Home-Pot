@@ -4,18 +4,24 @@ const envUrl = import.meta.env.VITE_SUPABASE_URL;
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 /**
- * Resolve the Supabase URL at runtime so that the same built bundle works for
- * the host (on `localhost`) AND for friends opening the PWA via the host's LAN
- * IP. We only use the build-time URL if it's not pointing at localhost; in that
- * case we substitute whatever hostname the page is served from.
+ * Resolve the Supabase URL.
+ *
+ *  - If the build-time env URL is set to a *non-local* host (prod), use it
+ *    verbatim — prod has Supabase on the same domain via Caddy on :443.
+ *  - If the build-time env URL is missing or points at localhost (dev), and the
+ *    PWA is being opened from a non-localhost host (LAN IP, e.g. 10.0.0.14),
+ *    swap the host to whatever the page was served from + :8000 so friends
+ *    can reach the dev box from their phones.
+ *  - Otherwise fall back to the env URL or localhost.
  */
 function resolveSupabaseUrl(): string {
+  const envIsLocal = !envUrl || /localhost|127\.0\.0\.1/.test(envUrl);
+  if (!envIsLocal) return envUrl as string;
+
   if (typeof window !== 'undefined') {
     const pageHost = window.location.hostname;
-    const isLocal = !pageHost || pageHost === 'localhost' || pageHost === '127.0.0.1';
-    if (!isLocal) {
-      return `${window.location.protocol}//${pageHost}:8000`;
-    }
+    const pageIsLocal = !pageHost || pageHost === 'localhost' || pageHost === '127.0.0.1';
+    if (!pageIsLocal) return `${window.location.protocol}//${pageHost}:8000`;
   }
   return envUrl ?? 'http://localhost:8000';
 }
