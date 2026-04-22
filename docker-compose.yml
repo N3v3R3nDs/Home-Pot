@@ -1,0 +1,200 @@
+# Home Pot — full self-hosted stack (PWA + Supabase)
+# Bring up:    docker compose up -d
+# Tear down:   docker compose down
+# Reset DB:    docker compose down -v && docker compose up -d
+#
+# Web app:      http://localhost:5173
+# Supabase API: http://localhost:8000   (use this as VITE_SUPABASE_URL)
+# Supabase UI:  http://localhost:8000   (Studio served at the same gateway / )
+#
+# All keys, passwords, and JWT secrets come from .env (see .env.example).
+
+name: home-pot
+
+services:
+  # --------------------------------------------------------------------- PWA
+  pwa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+    depends_on:
+      - kong
+
+  # ---------------------------------------------------------------- Postgres
+  db:
+    image: supabase/postgres:15.6.1.139
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP: 3600
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # Mount each migration as an individual file so the image's own
+      # /docker-entrypoint-initdb.d scripts (which create the supabase roles)
+      # are NOT hidden by a directory mount. zz- prefix ensures these run last.
+      - ./supabase/migrations/00-roles.sh:/docker-entrypoint-initdb.d/zz-00-roles.sh
+      - ./supabase/migrations/01-init.sql:/docker-entrypoint-initdb.d/zz-01-init.sql
+      - ./supabase/migrations/02-collab.sql:/docker-entrypoint-initdb.d/zz-02-collab.sql
+      - ./supabase/migrations/03-bank.sql:/docker-entrypoint-initdb.d/zz-03-bank.sql
+      - ./supabase/migrations/04-join-codes.sql:/docker-entrypoint-initdb.d/zz-04-join-codes.sql
+    ports:
+      - "54322:5432"
+
+  # ------------------------------------------------------------ PostgREST API
+  rest:
+    image: postgrest/postgrest:v12.2.0
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public,storage
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
+
+  # ------------------------------------------------------------ Auth (GoTrue)
+  auth:
+    image: supabase/gotrue:v2.158.1
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${VITE_SUPABASE_URL}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      GOTRUE_SITE_URL: ${SITE_URL}
+      GOTRUE_URI_ALLOW_LIST: ${SITE_URL}
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"  # friend-group convenience: skip email verification
+      GOTRUE_SMS_AUTOCONFIRM: "true"
+      # Allow anonymous sign-ins so friends can quick-join with just a code.
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "true"
+
+  # --------------------------------------------------------------- Realtime
+  realtime:
+    image: supabase/realtime:v2.30.34
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: postgres
+      DB_AFTER_CONNECT_QUERY: 'SET search_path TO _realtime'
+      DB_ENC_KEY: supabaserealtime  # must be exactly 16 chars (AES-128)
+      API_JWT_SECRET: ${JWT_SECRET}
+      SECRET_KEY_BASE: UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq
+      APP_NAME: realtime
+      ERL_AFLAGS: -proto_dist inet_tcp
+      RLIMIT_NOFILE: "10000"
+      DNS_NODES: "''"
+      # Auto-seed a single tenant called "realtime" on first boot.
+      SEED_SELF_HOST: "true"
+      RUN_JANITOR: "true"
+
+  # --------------------------------------------------------- Studio (Admin UI)
+  studio:
+    image: supabase/studio:20240729-ce42139
+    restart: unless-stopped
+    depends_on:
+      - kong
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DEFAULT_ORGANIZATION_NAME: Home Pot
+      DEFAULT_PROJECT_NAME: Home Pot
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_PUBLIC_URL: ${VITE_SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+
+  # ------------------------------------------------------------------- Meta
+  meta:
+    image: supabase/postgres-meta:v0.83.2
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+
+  # ----------------------------------------------------- Kong config resolver
+  # Kong's declarative YAML doesn't do env-var substitution, so we render the
+  # final config (with real ANON_KEY / SERVICE_ROLE_KEY) into a shared volume
+  # before Kong boots.
+  kong-config:
+    image: alpine:3.20
+    command:
+      - sh
+      - -c
+      - |
+        apk add --no-cache gettext >/dev/null &&
+        envsubst < /template/kong.yml > /resolved/kong.yml &&
+        echo "Kong config rendered."
+    environment:
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+    volumes:
+      - ./supabase/kong.yml:/template/kong.yml:ro
+      - kong-config:/resolved
+    restart: "no"
+
+  # --------------------------------------------------------- Kong API gateway
+  kong:
+    image: kong:2.8.1
+    restart: unless-stopped
+    ports:
+      - "8000:8000/tcp"
+      - "8443:8443/tcp"
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+    volumes:
+      - kong-config:/var/lib/kong:ro
+    depends_on:
+      kong-config:
+        condition: service_completed_successfully
+      auth:
+        condition: service_started
+      rest:
+        condition: service_started
+      realtime:
+        condition: service_started
+      meta:
+        condition: service_started
+
+volumes:
+  db-data:
+  kong-config:

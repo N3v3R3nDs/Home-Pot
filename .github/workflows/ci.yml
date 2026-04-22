@@ -1,0 +1,111 @@
+name: Build & Deploy (self-hosted)
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: home-pot-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  PWA_IMAGE: ghcr.io/n3v3r3nds/home-pot-pwa
+
+jobs:
+  # ---- Lint (runs on PRs and pushes) ----
+  lint:
+    runs-on: [self-hosted, linux, X64, docker]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck / build
+        run: npm run build
+
+  # ---- Build & push PWA (skip on PRs) ----
+  pwa:
+    needs: [lint]
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: [self-hosted, linux, X64, docker]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+          driver-opts: |
+            image=moby/buildkit:latest
+            network=host
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: PWA meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.PWA_IMAGE }}
+          tags: |
+            type=ref,event=branch,branch=main
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+            type=ref,event=tag
+
+      - name: Build & push PWA
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VITE_SUPABASE_URL=https://poker.sexyness.app
+            VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          cache-from: type=registry,ref=${{ env.PWA_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.PWA_IMAGE }}:buildcache,mode=max
+
+  # ---- Trigger Portainer redeploy (main only) ----
+  deploy:
+    needs: [pwa]
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    runs-on: [self-hosted, linux, X64, docker]
+    env:
+      PORTAINER_STACK_WEBHOOK_URL: ${{ secrets.PORTAINER_STACK_WEBHOOK_URL }}
+    steps:
+      - name: Trigger Portainer webhook
+        if: ${{ env.PORTAINER_STACK_WEBHOOK_URL != '' }}
+        run: |
+          echo "Triggering Portainer webhook to redeploy Home Pot stack..."
+          curl -k -fsS -X POST \
+            --connect-timeout 10 \
+            --max-time 60 \
+            --retry 3 \
+            --retry-delay 5 \
+            "$PORTAINER_STACK_WEBHOOK_URL"
+          echo "Portainer webhook triggered successfully!"

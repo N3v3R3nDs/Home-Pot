@@ -1,0 +1,356 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Sheet } from '@/components/ui/Sheet';
+import { supabase } from '@/lib/supabase';
+import { useSettings } from '@/store/settings';
+import { formatMoney } from '@/lib/format';
+import { computeSettlements } from './settle';
+import { recordBankTx } from '@/lib/bank';
+import type { CashBuyIn, CashGame, CashGamePlayer, Profile } from '@/types/db';
+
+export function CashGameLive() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { currency } = useSettings();
+  const [game, setGame] = useState<CashGame | null>(null);
+  const [players, setPlayers] = useState<CashGamePlayer[]>([]);
+  const [buyIns, setBuyIns] = useState<CashBuyIn[]>([]);
+  const [profileMap, setProfileMap] = useState<Record<string, Profile>>({});
+  const [adding, setAdding] = useState(false);
+  const [guestName, setGuestName] = useState('');
+  const [defaultBuyIn, setDefaultBuyIn] = useState(500);
+  const [topUpFor, setTopUpFor] = useState<CashGamePlayer | null>(null);
+  const [topUpAmount, setTopUpAmount] = useState(500);
+  const [cashOutFor, setCashOutFor] = useState<CashGamePlayer | null>(null);
+  const [cashOutAmount, setCashOutAmount] = useState(0);
+  const [fromBank, setFromBank] = useState(false);
+  const [topUpFromBank, setTopUpFromBank] = useState(false);
+  const [leaveInBank, setLeaveInBank] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    const load = async () => {
+      const [{ data: g }, { data: ps }] = await Promise.all([
+        supabase.from('cash_games').select('*').eq('id', id).maybeSingle(),
+        supabase.from('cash_game_players').select('*').eq('cash_game_id', id).order('created_at'),
+      ]);
+      if (cancelled) return;
+      setGame(g as CashGame | null);
+      setPlayers((ps ?? []) as CashGamePlayer[]);
+      const ids = (ps ?? []).map((p) => p.profile_id).filter(Boolean) as string[];
+      if (ids.length) {
+        const { data: profiles } = await supabase.from('profiles').select('*').in('id', ids);
+        setProfileMap(Object.fromEntries((profiles ?? []).map((p) => [p.id, p as Profile])));
+      }
+      const playerIds = (ps ?? []).map((p) => p.id);
+      if (playerIds.length) {
+        const { data: bi } = await supabase.from('cash_buy_ins').select('*').in('cash_game_player_id', playerIds);
+        setBuyIns((bi ?? []) as CashBuyIn[]);
+      }
+    };
+    load();
+
+    const ch = supabase.channel(`cash:${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_games', filter: `id=eq.${id}` },
+        (p) => setGame(p.new as CashGame))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_game_players', filter: `cash_game_id=eq.${id}` },
+        (p) => {
+          setPlayers((prev) => {
+            if (p.eventType === 'INSERT') return [...prev, p.new as CashGamePlayer];
+            if (p.eventType === 'UPDATE') return prev.map((x) => x.id === (p.new as CashGamePlayer).id ? (p.new as CashGamePlayer) : x);
+            if (p.eventType === 'DELETE') return prev.filter((x) => x.id !== (p.old as CashGamePlayer).id);
+            return prev;
+          });
+        })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_buy_ins' },
+        (p) => {
+          setBuyIns((prev) => {
+            if (p.eventType === 'INSERT') return [...prev, p.new as CashBuyIn];
+            if (p.eventType === 'DELETE') return prev.filter((x) => x.id !== (p.old as CashBuyIn).id);
+            return prev;
+          });
+        })
+      .subscribe();
+    return () => { cancelled = true; supabase.removeChannel(ch); };
+  }, [id]);
+
+  const playerName = (p: CashGamePlayer) =>
+    p.profile_id ? profileMap[p.profile_id]?.display_name ?? '…' : (p.guest_name ?? 'Guest');
+  const playerAvatar = (p: CashGamePlayer) =>
+    p.profile_id ? profileMap[p.profile_id]?.avatar_emoji ?? '🃏' : '👤';
+
+  const totals = useMemo(() => {
+    const map: Record<string, { in: number; out: number }> = {};
+    for (const p of players) map[p.id] = { in: 0, out: p.cash_out ?? 0 };
+    for (const b of buyIns) {
+      if (map[b.cash_game_player_id]) map[b.cash_game_player_id].in += b.amount;
+    }
+    return map;
+  }, [players, buyIns]);
+
+  const totalOnTable = players.reduce(
+    (s, p) => s + (totals[p.id]?.in ?? 0) - (p.cash_out ?? 0),
+    0,
+  );
+
+  const positions = players.map((p) => {
+    const t = totals[p.id] ?? { in: 0, out: 0 };
+    return {
+      id: p.id,
+      name: playerName(p),
+      net: (p.cash_out ?? 0) - t.in,        // null cash_out => still in: net is -in (down by their stack)
+    };
+  });
+
+  const settlements = computeSettlements(positions);
+
+  const addPlayer = async (profile_id?: string, guest?: string) => {
+    if (!id || !game) return;
+    const { data: p } = await supabase.from('cash_game_players').insert({
+      cash_game_id: id,
+      profile_id: profile_id ?? null,
+      guest_name: guest ?? null,
+    }).select().single();
+    if (p && defaultBuyIn > 0) {
+      await supabase.from('cash_buy_ins').insert({
+        cash_game_player_id: p.id, amount: defaultBuyIn,
+      });
+      if (fromBank) {
+        await recordBankTx({
+          profile_id, guest_name: guest, amount: -defaultBuyIn,
+          currency: game.currency, kind: 'cash_buy_in',
+          ref_table: 'cash_games', ref_id: id,
+          note: `Buy-in for ${game.name}`,
+        });
+      }
+    }
+    setGuestName(''); setAdding(false); setFromBank(false);
+  };
+
+  const topUp = async () => {
+    if (!topUpFor || !game) return;
+    await supabase.from('cash_buy_ins').insert({
+      cash_game_player_id: topUpFor.id, amount: topUpAmount,
+    });
+    if (topUpFromBank) {
+      await recordBankTx({
+        profile_id: topUpFor.profile_id, guest_name: topUpFor.guest_name,
+        amount: -topUpAmount,
+        currency: game.currency, kind: 'cash_buy_in',
+        ref_table: 'cash_games', ref_id: id,
+        note: `Top-up for ${game.name}`,
+      });
+    }
+    setTopUpFor(null); setTopUpFromBank(false);
+  };
+
+  const endCashGame = async () => {
+    if (!game) return;
+    const stillIn = players.filter((p) => p.cash_out === null);
+    if (stillIn.length > 0 && !confirm(`${stillIn.length} player${stillIn.length === 1 ? ' has' : 's have'} not cashed out. End anyway?`)) return;
+    await supabase.from('cash_games').update({ state: 'finished', ended_at: new Date().toISOString() }).eq('id', game.id);
+    setShowAdmin(false);
+    navigate('/');
+  };
+  const deleteCashGame = async () => {
+    if (!game) return;
+    if (!confirm(`Delete "${game.name}" and all its players? This cannot be undone.`)) return;
+    await supabase.from('cash_games').delete().eq('id', game.id);
+    setShowAdmin(false);
+    navigate('/');
+  };
+
+  const cashOut = async () => {
+    if (!cashOutFor || !game) return;
+    await supabase.from('cash_game_players')
+      .update({ cash_out: cashOutAmount })
+      .eq('id', cashOutFor.id);
+    if (leaveInBank && cashOutAmount > 0) {
+      await recordBankTx({
+        profile_id: cashOutFor.profile_id, guest_name: cashOutFor.guest_name,
+        amount: cashOutAmount,
+        currency: game.currency, kind: 'cash_close',
+        ref_table: 'cash_games', ref_id: id,
+        note: `Left in bank from ${game.name}`,
+      });
+    }
+    setCashOutFor(null); setLeaveInBank(false);
+  };
+
+  if (!game) return <div>Loading…</div>;
+
+  return (
+    <div className="space-y-4 pb-4">
+      <header className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="font-display text-3xl text-brass-shine truncate">{game.name}</h1>
+          <p className="text-ink-400 text-sm">
+            {game.small_blind}/{game.big_blind} {game.currency} · {players.length} player{players.length === 1 ? '' : 's'}
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0 items-center">
+          {game.join_code && (
+            <span
+              className="font-display text-xl tracking-[0.4em] px-3 py-1.5 rounded-xl text-felt-950 shadow-glow"
+              style={{ backgroundImage: 'linear-gradient(135deg, #ecd075 0%, #d8a920 50%, #bf9013 100%)' }}
+              title="Join code"
+            >
+              {game.join_code}
+            </span>
+          )}
+          <button onClick={() => setShowAdmin(true)} className="btn-ghost text-sm !px-3 !py-2" title="More">
+            ⋯
+          </button>
+        </div>
+      </header>
+
+      <div className="grid grid-cols-2 gap-3">
+        <StatCard label="On the table" value={formatMoney(totalOnTable, currency)} />
+        <StatCard label="Total bought in" value={formatMoney(players.reduce((s, p) => s + (totals[p.id]?.in ?? 0), 0), currency)} />
+      </div>
+
+      <Card>
+        <div className="flex items-center justify-between mb-3">
+          <p className="label !mb-0">Players</p>
+          <Button variant="ghost" className="!px-3 !py-2 text-xs" onClick={() => setAdding(true)}>＋ Add</Button>
+        </div>
+        <ul className="space-y-2">
+          {players.map((p) => {
+            const t = totals[p.id] ?? { in: 0, out: 0 };
+            const net = (p.cash_out ?? 0) - t.in;
+            const isOut = p.cash_out !== null;
+            return (
+              <motion.li key={p.id} layout className="bg-felt-950/60 rounded-xl p-3 border border-felt-800">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">{playerAvatar(p)}</span>
+                    <div>
+                      <div className="font-semibold">{playerName(p)}{isOut && <span className="ml-2 pill bg-felt-800 text-ink-300">cashed out</span>}</div>
+                      <div className="text-xs text-ink-400">In {formatMoney(t.in, currency)}{isOut && ` · Out ${formatMoney(p.cash_out ?? 0, currency)}`}</div>
+                    </div>
+                  </div>
+                  <div className={`font-mono text-lg ${net > 0 ? 'text-emerald-400' : net < 0 ? 'text-red-400' : 'text-ink-200'}`}>
+                    {net >= 0 ? '+' : ''}{formatMoney(net, currency)}
+                  </div>
+                </div>
+                {!isOut && (
+                  <div className="mt-2 flex gap-2 justify-end">
+                    <Button variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={() => { setTopUpFor(p); setTopUpAmount(defaultBuyIn); }}>+ Buy-in</Button>
+                    <Button variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={() => { setCashOutFor(p); setCashOutAmount(t.in); }}>Cash out</Button>
+                  </div>
+                )}
+              </motion.li>
+            );
+          })}
+          {players.length === 0 && <li className="text-ink-400 text-sm">No players yet.</li>}
+        </ul>
+      </Card>
+
+      {settlements.length > 0 && (
+        <Card>
+          <p className="label">Settle up</p>
+          <ul className="space-y-2">
+            {settlements.map((s, i) => (
+              <li key={i} className="flex items-center justify-between bg-felt-950/60 rounded-lg px-3 py-2">
+                <span className="text-sm"><span className="text-red-400">{s.fromName}</span> → <span className="text-emerald-400">{s.toName}</span></span>
+                <span className="font-mono text-brass-200">{formatMoney(s.amount, currency)}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      <Sheet open={showAdmin} onClose={() => setShowAdmin(false)} title="Cash game">
+        <div className="space-y-3">
+          {game.state !== 'finished' && (
+            <Button variant="ghost" full onClick={endCashGame}>
+              🏁 End cash game now
+              <span className="text-xs text-ink-400 ml-2">(moves to History)</span>
+            </Button>
+          )}
+          <Button variant="danger" full onClick={deleteCashGame}>
+            🗑 Delete cash game
+          </Button>
+          <p className="text-xs text-ink-400 text-center pt-2">
+            Bank transactions are kept in the ledger for audit.
+          </p>
+        </div>
+      </Sheet>
+
+      <Sheet open={adding} onClose={() => { setAdding(false); setFromBank(false); }} title="Add player">
+        <Input label="Default buy-in" type="number" value={defaultBuyIn} suffix={currency}
+          onChange={(e) => setDefaultBuyIn(Number(e.target.value))} />
+        <Input label="Guest name" value={guestName} onChange={(e) => setGuestName(e.target.value)}
+          placeholder="e.g. Lars" className="mt-3" />
+        <BankToggle on={fromBank} setOn={setFromBank} mode="from" amount={defaultBuyIn} currency={currency} />
+        <Button full onClick={() => addPlayer(undefined, guestName.trim())} className="mt-4" disabled={!guestName.trim()}>
+          Seat guest with {formatMoney(defaultBuyIn, currency)}{fromBank ? ' · from 🏦' : ''}
+        </Button>
+      </Sheet>
+
+      <Sheet open={!!topUpFor} onClose={() => { setTopUpFor(null); setTopUpFromBank(false); }}
+        title={topUpFor ? `Buy-in for ${playerName(topUpFor)}` : ''}>
+        <Input label="Amount" type="number" value={topUpAmount} suffix={currency}
+          onChange={(e) => setTopUpAmount(Number(e.target.value))} />
+        <BankToggle on={topUpFromBank} setOn={setTopUpFromBank} mode="from" amount={topUpAmount} currency={currency} />
+        <Button full onClick={topUp} className="mt-4">Add buy-in{topUpFromBank ? ' · from 🏦' : ''}</Button>
+      </Sheet>
+
+      <Sheet open={!!cashOutFor} onClose={() => { setCashOutFor(null); setLeaveInBank(false); }}
+        title={cashOutFor ? `Cash out ${playerName(cashOutFor)}` : ''}>
+        <Input label="Stack value at cash-out" type="number" value={cashOutAmount} suffix={currency}
+          onChange={(e) => setCashOutAmount(Number(e.target.value))} />
+        <BankToggle on={leaveInBank} setOn={setLeaveInBank} mode="to" amount={cashOutAmount} currency={currency} />
+        <Button full onClick={cashOut} className="mt-4">Cash out{leaveInBank ? ' · leave in 🏦' : ''}</Button>
+      </Sheet>
+    </div>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-felt-card border border-felt-800 rounded-xl p-3 text-center">
+      <div className="text-[10px] uppercase tracking-widest text-ink-400">{label}</div>
+      <div className="font-display text-2xl text-brass-200 mt-1 tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+interface BankToggleProps {
+  on: boolean;
+  setOn: (v: boolean) => void;
+  /** "from" = debit bank for buy-in. "to" = credit bank with cash-out. */
+  mode: 'from' | 'to';
+  amount: number;
+  currency: string;
+}
+
+function BankToggle({ on, setOn, mode, amount, currency }: BankToggleProps) {
+  const label = mode === 'from' ? 'Pay from bank 🏦' : 'Leave in bank 🏦';
+  const sub = mode === 'from'
+    ? `Debits ${formatMoney(amount, currency)} from their account.`
+    : `Credits ${formatMoney(amount, currency)} to their account — no cash changes hands.`;
+  return (
+    <button
+      type="button"
+      onClick={() => setOn(!on)}
+      className={`mt-3 w-full flex items-center justify-between rounded-xl border px-4 py-3 text-left transition ${
+        on ? 'bg-brass-500/15 border-brass-500/50 text-brass-100' : 'bg-felt-900/60 border-felt-700 text-ink-200'
+      }`}
+    >
+      <div>
+        <div className="font-semibold text-sm">{label}</div>
+        <div className="text-[11px] text-ink-400">{sub}</div>
+      </div>
+      <div className={`w-12 h-7 rounded-full relative transition ${on ? 'bg-brass-500' : 'bg-felt-700'}`}>
+        <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white transition ${on ? 'left-5' : 'left-0.5'}`} />
+      </div>
+    </button>
+  );
+}

@@ -1,0 +1,359 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* ─── Theme: Felt Green (default) ──────────────────────────────────── */
+  :root, [data-theme="felt-green"] {
+    color-scheme: dark;
+    --felt-50:  232 243 236;
+    --felt-100: 191 220 200;
+    --felt-200: 148 196 163;
+    --felt-300: 105 172 126;
+    --felt-400:  63 149  89;
+    --felt-500:  38 121  63;
+    --felt-600:  26  94  48;
+    --felt-700:  17  69  35;
+    --felt-800:  10  46  23;
+    --felt-900:   6  25  13;
+    --felt-950:   3  15   7;
+
+    --brass-50:  251 243 220;
+    --brass-100: 244 226 168;
+    --brass-200: 236 208 117;
+    --brass-300: 227 189  68;
+    --brass-400: 216 169  32;
+    --brass-500: 191 144  19;
+    --brass-600: 154 114  12;
+    --brass-700: 117  85  10;
+    --brass-800:  82  59   9;
+    --brass-900:  49  35   5;
+
+    --ink-50:  244 247 245;
+    --ink-100: 221 230 224;
+    --ink-200: 188 205 194;
+    --ink-300: 148 175 160;
+    --ink-400: 110 141 124;
+    --ink-500:  83 110  96;
+    --ink-600:  63  87  75;
+    --ink-700:  47  65  58;
+    --ink-800:  29  41  36;
+    --ink-900:  14  22  18;
+    --ink-950:   7  11   9;
+
+    --bg-glow-1: 38 121 63;     /* top accent glow */
+    --bg-glow-2: 216 169 32;    /* bottom accent glow */
+    --shine-from: 244 226 168;
+    --shine-mid:  216 169  32;
+    --shine-to:   154 114  12;
+  }
+
+  /* ─── Theme: Midnight Royal ────────────────────────────────────────── */
+  [data-theme="midnight"] {
+    color-scheme: dark;
+    --felt-50:  234 238 252;
+    --felt-100: 197 207 240;
+    --felt-200: 154 171 224;
+    --felt-300: 112 134 207;
+    --felt-400:  74 100 188;
+    --felt-500:  53  77 158;
+    --felt-600:  39  58 124;
+    --felt-700:  27  41  92;
+    --felt-800:  15  25  60;
+    --felt-900:   8  15  40;
+    --felt-950:   4   8  22;
+
+    --brass-50:  253 245 219;
+    --brass-100: 248 230 168;
+    --brass-200: 240 213 121;
+    --brass-300: 224 188  74;
+    --brass-400: 212 175  55;
+    --brass-500: 184 144  35;
+    --brass-600: 145 112  25;
+    --brass-700: 105  79  18;
+    --brass-800:  68  51  12;
+    --brass-900:  37  27   6;
+
+    --ink-50:  244 246 252;
+    --ink-100: 220 226 240;
+    --ink-200: 187 196 220;
+    --ink-300: 144 158 188;
+    --ink-400: 108 124 158;
+    --ink-500:  80  95 124;
+    --ink-600:  61  74 100;
+    --ink-700:  46  56  78;
+    --ink-800:  28  37  56;
+    --ink-900:  14  20  36;
+    --ink-950:   7  10  20;
+
+    --bg-glow-1: 53 77 158;
+    --bg-glow-2: 212 175 55;
+    --shine-from: 248 230 168;
+    --shine-mid:  212 175  55;
+    --shine-to:   145 112  25;
+  }
+
+  /* ─── Theme: Burgundy ──────────────────────────────────────────────── */
+  [data-theme="burgundy"] {
+    color-scheme: dark;
+    --felt-50:  248 230 232;
+    --felt-100: 232 184 188;
+    --felt-200: 212 138 144;
+    --felt-300: 188  92 100;
+    --felt-400: 158  53  62;
+    --felt-500: 130  35  45;
+    --felt-600: 101  26  34;
+    --felt-700:  76  18  25;
+    --felt-800:  53  12  17;
+    --felt-900:  33   6  10;
+    --felt-950:  18   3   5;
+
+    --brass-50:  251 244 215;
+    --brass-100: 246 231 168;
+    --brass-200: 238 215 122;
+    --brass-300: 226 196  72;
+    --brass-400: 215 182  35;
+    --brass-500: 188 156  22;
+    --brass-600: 153 124  15;
+    --brass-700: 118  93  12;
+    --brass-800:  82  64  10;
+    --brass-900:  49  37   6;
+
+    --ink-50:  248 244 244;
+    --ink-100: 232 224 224;
+    --ink-200: 208 196 196;
+    --ink-300: 175 158 158;
+    --ink-400: 142 122 122;
+    --ink-500: 110  93  93;
+    --ink-600:  85  72  72;
+    --ink-700:  64  53  53;
+    --ink-800:  45  36  36;
+    --ink-900:  26  18  18;
+    --ink-950:  14   8   8;
+
+    --bg-glow-1: 158 53 62;
+    --bg-glow-2: 215 182 35;
+    --shine-from: 246 231 168;
+    --shine-mid:  215 182  35;
+    --shine-to:   153 124  15;
+  }
+
+  /* ─── Theme: Vegas Neon ────────────────────────────────────────────── */
+  [data-theme="vegas-neon"] {
+    color-scheme: dark;
+    --felt-50:  240 240 244;
+    --felt-100: 210 210 220;
+    --felt-200: 175 175 192;
+    --felt-300: 138 138 158;
+    --felt-400: 100 100 122;
+    --felt-500:  74  74  94;
+    --felt-600:  56  56  72;
+    --felt-700:  40  40  54;
+    --felt-800:  26  26  36;
+    --felt-900:  14  14  20;
+    --felt-950:   6   6  10;
+
+    --brass-50:  255 230 248;
+    --brass-100: 252 198 234;
+    --brass-200: 248 158 218;
+    --brass-300: 244 114 196;
+    --brass-400: 236  72 153;
+    --brass-500: 209  37 130;
+    --brass-600: 169  20 105;
+    --brass-700: 124  16  78;
+    --brass-800:  82  10  52;
+    --brass-900:  46   5  29;
+
+    --ink-50:  246 246 250;
+    --ink-100: 224 224 234;
+    --ink-200: 196 196 215;
+    --ink-300: 162 162 188;
+    --ink-400: 128 128 156;
+    --ink-500: 100 100 124;
+    --ink-600:  78  78  98;
+    --ink-700:  60  60  76;
+    --ink-800:  42  42  56;
+    --ink-900:  24  24  34;
+    --ink-950:  12  12  18;
+
+    --bg-glow-1: 236 72 153;
+    --bg-glow-2: 6 182 212;
+    --shine-from: 252 198 234;
+    --shine-mid:  236  72 153;
+    --shine-to:   124  16  78;
+  }
+
+  /* ─── Theme: Crimson Casino ────────────────────────────────────────── */
+  [data-theme="crimson"] {
+    color-scheme: dark;
+    --felt-50:  248 232 232;
+    --felt-100: 234 184 184;
+    --felt-200: 215 132 132;
+    --felt-300: 195  85  85;
+    --felt-400: 168  48  48;
+    --felt-500: 138  30  30;
+    --felt-600: 105  20  20;
+    --felt-700:  74  14  14;
+    --felt-800:  46   8   8;
+    --felt-900:  22   4   4;
+    --felt-950:  12   2   2;
+
+    --brass-50:  255 240 220;
+    --brass-100: 252 220 168;
+    --brass-200: 248 196 116;
+    --brass-300: 244 170  68;
+    --brass-400: 236 144  32;
+    --brass-500: 207 121  20;
+    --brass-600: 168  92  12;
+    --brass-700: 124  66  10;
+    --brass-800:  82  43   8;
+    --brass-900:  47  24   4;
+
+    --ink-50:  248 244 244;
+    --ink-100: 232 220 220;
+    --ink-200: 208 192 192;
+    --ink-300: 175 152 152;
+    --ink-400: 142 116 116;
+    --ink-500: 110  88  88;
+    --ink-600:  85  68  68;
+    --ink-700:  64  50  50;
+    --ink-800:  45  34  34;
+    --ink-900:  26  16  16;
+    --ink-950:  14   7   7;
+
+    --bg-glow-1: 168 48 48;
+    --bg-glow-2: 236 144 32;
+    --shine-from: 252 220 168;
+    --shine-mid:  236 144  32;
+    --shine-to:   168  92  12;
+  }
+
+  /* ─── Theme: Platinum (light mode) ─────────────────────────────────── */
+  [data-theme="platinum"] {
+    color-scheme: light;
+    /* "felt" inverted: 950 = darkest accent, 50 = brightest bg */
+    --felt-50:   8  18  20;     /* "darkest" used by .text-felt-950 etc */
+    --felt-100: 16  28  30;
+    --felt-200: 30  44  46;
+    --felt-300: 56  72  76;
+    --felt-400: 90 106 110;
+    --felt-500: 130 145 150;
+    --felt-600: 175 184 188;
+    --felt-700: 215 222 226;
+    --felt-800: 235 240 243;
+    --felt-900: 246 248 250;
+    --felt-950: 252 253 254;
+
+    --brass-50:   80  56   6;
+    --brass-100: 110  78  10;
+    --brass-200: 142 102  14;
+    --brass-300: 174 126  18;
+    --brass-400: 200 145  22;
+    --brass-500: 222 160  30;
+    --brass-600: 240 188  60;
+    --brass-700: 248 212 110;
+    --brass-800: 252 230 168;
+    --brass-900: 254 242 208;
+
+    --ink-50:    20  24  26;
+    --ink-100:   42  48  52;
+    --ink-200:   65  74  80;
+    --ink-300:   92 104 112;
+    --ink-400: 120 134 144;
+    --ink-500: 148 162 172;
+    --ink-600: 178 192 200;
+    --ink-700: 204 215 222;
+    --ink-800: 226 234 240;
+    --ink-900: 240 244 248;
+    --ink-950: 248 250 252;
+
+    --bg-glow-1: 240 188 60;
+    --bg-glow-2: 200 145 22;
+    --shine-from: 110  78  10;
+    --shine-mid:  174 126  18;
+    --shine-to:   222 160  30;
+  }
+
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-felt-950 text-ink-50 font-sans antialiased;
+    background-image:
+      radial-gradient(ellipse 100% 60% at 50% -10%, rgb(var(--bg-glow-1) / 0.18) 0%, transparent 60%),
+      radial-gradient(ellipse 80% 60% at 50% 110%, rgb(var(--bg-glow-2) / 0.10) 0%, transparent 60%);
+    background-attachment: fixed;
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  .pl-safe { padding-left: env(safe-area-inset-left); }
+  .pr-safe { padding-right: env(safe-area-inset-right); }
+}
+
+@layer components {
+  .card-felt {
+    @apply rounded-2xl bg-felt-card border border-felt-700/60 shadow-felt;
+  }
+  .text-brass-shine {
+    background: linear-gradient(
+      135deg,
+      rgb(var(--shine-from)) 0%,
+      rgb(var(--shine-mid)) 50%,
+      rgb(var(--shine-from)) 100%
+    );
+    background-size: 200% 200%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shine 3.5s ease-in-out infinite;
+  }
+  .bg-brass-gradient {
+    background-image: linear-gradient(135deg,
+      rgb(var(--shine-from)) 0%,
+      rgb(var(--shine-mid)) 50%,
+      rgb(var(--shine-to)) 100%);
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 font-semibold text-base transition active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none select-none;
+  }
+  .btn-primary {
+    @apply btn text-felt-950 shadow-glow hover:brightness-110;
+    background-image: linear-gradient(135deg,
+      rgb(var(--shine-from)) 0%,
+      rgb(var(--shine-mid)) 50%,
+      rgb(var(--shine-to)) 100%);
+  }
+  .btn-ghost {
+    @apply btn bg-felt-800/60 text-ink-50 border border-felt-700/60 hover:bg-felt-800;
+  }
+  .btn-danger {
+    @apply btn bg-red-600/90 text-white hover:bg-red-600;
+  }
+  .input {
+    @apply w-full rounded-xl bg-felt-900/80 border border-felt-700/60 px-4 py-3 text-ink-50 placeholder:text-ink-500 focus:outline-none focus:ring-2 focus:ring-brass-400/60 focus:border-brass-400/40;
+  }
+  .label {
+    @apply text-xs uppercase tracking-widest text-ink-300 font-semibold mb-2 block;
+  }
+  .pill {
+    @apply inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wider;
+  }
+  .stat {
+    @apply flex flex-col items-center justify-center gap-1;
+  }
+  .stat-label {
+    @apply text-[10px] uppercase tracking-widest text-ink-400 font-semibold;
+  }
+  .stat-value {
+    @apply font-display text-3xl text-ink-50 tabular-nums;
+  }
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
