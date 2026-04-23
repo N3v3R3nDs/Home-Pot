@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { useConfirm } from '@/components/ui/Confirm';
+import { useT } from '@/lib/i18n';
 import { supabase } from '@/lib/supabase';
 import { useSettings } from '@/store/settings';
 import { formatMoney } from '@/lib/format';
@@ -34,6 +35,7 @@ export function CashGameLive() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const confirm = useConfirm();
+  const t = useT();
 
   useEffect(() => {
     if (!id) return;
@@ -251,8 +253,8 @@ export function CashGameLive() {
       </header>
 
       <div className="grid grid-cols-2 gap-3">
-        <StatCard label="On the table" value={formatMoney(totalOnTable, currency)} />
-        <StatCard label="Total bought in" value={formatMoney(players.reduce((s, p) => s + (totals[p.id]?.in ?? 0), 0), currency)} />
+        <StatCard label={t('onTheTable')} value={formatMoney(totalOnTable, currency)} />
+        <StatCard label={t('totalBoughtIn')} value={formatMoney(players.reduce((s, p) => s + (totals[p.id]?.in ?? 0), 0), currency)} />
       </div>
 
       <Card>
@@ -296,12 +298,26 @@ export function CashGameLive() {
         <Card>
           <p className="label">Settle up</p>
           <ul className="space-y-2">
-            {settlements.map((s, i) => (
-              <li key={i} className="flex items-center justify-between bg-felt-950/60 rounded-lg px-3 py-2">
-                <span className="text-sm"><span className="text-red-400">{s.fromName}</span> → <span className="text-emerald-400">{s.toName}</span></span>
-                <span className="font-mono text-brass-200">{formatMoney(s.amount, currency)}</span>
-              </li>
-            ))}
+            {settlements.map((s, i) => {
+              // Deep links — works if the recipient has Vipps / Venmo installed.
+              // Vipps spec: vipps://send?phoneNumber=...&amount=...&currency=NOK
+              // Venmo spec: venmo://paycharge?txn=pay&amount=...&note=...
+              const noteText = encodeURIComponent(`Poker: ${game.name}`);
+              const vipps = `vipps://send?amount=${s.amount.toFixed(0)}&currency=${currency}&comment=${noteText}`;
+              const venmo = `venmo://paycharge?txn=pay&amount=${s.amount.toFixed(2)}&note=${noteText}`;
+              return (
+                <li key={i} className="bg-felt-950/60 rounded-lg px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm"><span className="text-red-400">{s.fromName}</span> → <span className="text-emerald-400">{s.toName}</span></span>
+                    <span className="font-mono text-brass-200">{formatMoney(s.amount, currency)}</span>
+                  </div>
+                  <div className="flex gap-1.5 mt-1.5">
+                    <a href={vipps} className="pill bg-brass-500/15 border border-brass-500/30 text-brass-200 text-[10px]">Vipps</a>
+                    <a href={venmo} className="pill bg-brass-500/15 border border-brass-500/30 text-brass-200 text-[10px]">Venmo</a>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </Card>
       )}

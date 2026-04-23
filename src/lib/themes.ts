@@ -1,6 +1,6 @@
 /** Visual themes — driven by CSS variables defined in index.css. */
 
-export type ThemeId = 'felt-green' | 'midnight' | 'burgundy' | 'vegas-neon' | 'crimson' | 'platinum';
+export type ThemeId = 'felt-green' | 'midnight' | 'burgundy' | 'vegas-neon' | 'crimson' | 'platinum' | 'high-contrast';
 
 export interface ThemeMeta {
   id: ThemeId;
@@ -46,6 +46,12 @@ export const THEMES: ThemeMeta[] = [
     label: 'Platinum (light)',
     blurb: 'Sun-up lobby.',
     swatch: ['#fcfdfe', '#ebf0f3', '#c89116'],
+  },
+  {
+    id: 'high-contrast',
+    label: 'High contrast',
+    blurb: 'Maximum readability.',
+    swatch: ['#000000', '#0a0a0a', '#ffd400'],
   },
 ];
 

@@ -1,5 +1,6 @@
 import { Link, useParams } from 'react-router-dom';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTournament } from '@/hooks/useTournament';
 import { useTournamentClock } from '@/hooks/useTournamentClock';
@@ -33,6 +34,47 @@ export function TournamentMonitor() {
     return () => { releaseWakeLock(); };
   }, []);
 
+  // Keyboard shortcuts: SPACE = pause/resume, ←/→ = level, F = fullscreen
+  const togglePauseShortcut = useCallback(async () => {
+    if (!tournament) return;
+    if (tournament.state === 'running') {
+      await supabase.from('tournaments').update({ state: 'paused', paused_at: new Date().toISOString() }).eq('id', tournament.id);
+    } else if (tournament.state === 'paused' && tournament.paused_at) {
+      const addedPause = Date.now() - Date.parse(tournament.paused_at);
+      await supabase.from('tournaments').update({
+        state: 'running', paused_at: null,
+        pause_elapsed_ms: tournament.pause_elapsed_ms + addedPause,
+      }).eq('id', tournament.id);
+    } else if (tournament.state === 'setup') {
+      await supabase.from('tournaments').update({
+        state: 'running',
+        level_started_at: new Date().toISOString(),
+        current_level: 0, pause_elapsed_ms: 0,
+      }).eq('id', tournament.id);
+    }
+  }, [tournament]);
+  const advanceShortcut = useCallback(async (by: number) => {
+    if (!tournament) return;
+    const next = Math.max(0, Math.min(tournament.blind_structure.length - 1, tournament.current_level + by));
+    await supabase.from('tournaments').update({
+      current_level: next,
+      level_started_at: new Date().toISOString(),
+      pause_elapsed_ms: 0,
+      paused_at: tournament.state === 'paused' ? null : tournament.paused_at,
+    }).eq('id', tournament.id);
+  }, [tournament]);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.code === 'Space') { e.preventDefault(); void togglePauseShortcut(); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); void advanceShortcut(1); }
+      else if (e.key === 'ArrowLeft')  { e.preventDefault(); void advanceShortcut(-1); }
+      else if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleFullscreen(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [togglePauseShortcut, advanceShortcut, toggleFullscreen]);
+
   const alive = players.filter((p) => p.eliminated_at === null);
   const buyIns = players.reduce((s, p) => s + p.buy_ins, 0);
   const rebuys = players.reduce((s, p) => s + p.rebuys, 0);
@@ -44,6 +86,8 @@ export function TournamentMonitor() {
     addonAmount: tournament.addon_amount ?? 0,
     bountyAmount: tournament.bounty_amount,
     buyIns, rebuys, addons,
+    rakePercent: tournament.rake_percent,
+    dealerTipPercent: tournament.dealer_tip_percent,
   }) : 0, [tournament, buyIns, rebuys, addons]);
 
   const totalChips = tournament

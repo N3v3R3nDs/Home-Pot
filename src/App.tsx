@@ -4,7 +4,9 @@ import { useAuth } from '@/store/auth';
 import { useSettings } from '@/store/settings';
 import { setMuted } from '@/lib/sounds';
 import { Layout } from '@/components/Layout';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ConfirmProvider } from '@/components/ui/Confirm';
+import { ToastProvider } from '@/components/ui/Toast';
 import { UndoProvider } from '@/components/ui/Undo';
 import { AuthScreen } from '@/features/auth/AuthScreen';
 
@@ -14,12 +16,14 @@ const Dashboard          = lazy(() => import('@/features/dashboard/Dashboard').t
 const TournamentWizard   = lazy(() => import('@/features/tournament/TournamentWizard').then((m) => ({ default: m.TournamentWizard })));
 const TournamentLive     = lazy(() => import('@/features/tournament/TournamentLive').then((m) => ({ default: m.TournamentLive })));
 const TournamentMonitor  = lazy(() => import('@/features/tournament/TournamentMonitor').then((m) => ({ default: m.TournamentMonitor })));
+const PublicTournament   = lazy(() => import('@/features/tournament/PublicView').then((m) => ({ default: m.PublicTournamentView })));
 const CashGameNew        = lazy(() => import('@/features/cash/CashGameNew').then((m) => ({ default: m.CashGameNew })));
 const CashGameLive       = lazy(() => import('@/features/cash/CashGameLive').then((m) => ({ default: m.CashGameLive })));
 const Bank               = lazy(() => import('@/features/bank/Bank').then((m) => ({ default: m.Bank })));
 const History            = lazy(() => import('@/features/history/History').then((m) => ({ default: m.History })));
 const PlayerProfile      = lazy(() => import('@/features/players/PlayerProfile').then((m) => ({ default: m.PlayerProfile })));
 const Settings           = lazy(() => import('@/features/settings/Settings').then((m) => ({ default: m.Settings })));
+const Status             = lazy(() => import('@/features/status/Status').then((m) => ({ default: m.Status })));
 
 function RouteFallback() {
   return (
@@ -49,9 +53,23 @@ export default function App() {
     );
   }
 
-  if (!session) return <AuthScreen />;
+  if (!session) return (
+    <ErrorBoundary>
+      <ToastProvider>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            {/* Public spectator URL — no login needed; component anon-signs-in */}
+            <Route path="/t/:code/view" element={<PublicTournament />} />
+            <Route path="*" element={<AuthScreen />} />
+          </Routes>
+        </Suspense>
+      </ToastProvider>
+    </ErrorBoundary>
+  );
 
   return (
+    <ErrorBoundary>
+    <ToastProvider>
     <ConfirmProvider>
       <UndoProvider>
         <Suspense fallback={<RouteFallback />}>
@@ -66,12 +84,16 @@ export default function App() {
               <Route path="/history" element={<History />} />
               <Route path="/player/:id" element={<PlayerProfile />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/status" element={<Status />} />
             </Route>
             <Route path="/tournament/:id/monitor" element={<TournamentMonitor />} />
+            <Route path="/t/:code/view" element={<PublicTournament />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
       </UndoProvider>
     </ConfirmProvider>
+    </ToastProvider>
+    </ErrorBoundary>
   );
 }

@@ -7,10 +7,12 @@ import { useAuth } from '@/store/auth';
 import { useSettings } from '@/store/settings';
 import { supabase } from '@/lib/supabase';
 import { generateJoinCode } from '@/lib/joinCode';
+import { useSeason } from '@/store/season';
 
 export function CashGameNew() {
   const { user } = useAuth();
   const { currency } = useSettings();
+  const { activeSeasonId } = useSeason();
   const navigate = useNavigate();
   const [name, setName] = useState(`Cash game ${new Date().toLocaleDateString('nb-NO')}`);
   const [sb, setSb] = useState(5);
@@ -31,6 +33,7 @@ export function CashGameNew() {
         big_blind: bb,
         currency,
         join_code: code,
+        season_id: activeSeasonId,
       }).select().single();
       if (!res.error) data = res.data as { id: string };
       else error = res.error;

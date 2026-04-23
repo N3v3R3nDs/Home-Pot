@@ -12,13 +12,16 @@ import { THEMES } from '@/lib/themes';
 import { LANGUAGES, useT } from '@/lib/i18n';
 import { supabase } from '@/lib/supabase';
 import { ensureNotificationPermission, notificationPermission } from '@/lib/notify';
+import { ActivityFeed } from '@/features/dashboard/ActivityFeed';
+import { SeasonAdmin } from '@/features/seasons/SeasonAdmin';
+import { Link } from 'react-router-dom';
 
 const EMOJIS = ['🃏', '🎩', '🍀', '🔥', '⚡', '👑', '🦈', '🐉', '🎯', '🚀', '💎', '🧠'];
 const CURRENCIES = ['NOK', 'USD', 'EUR', 'SEK', 'DKK', 'GBP'];
 
 export function Settings() {
   const { profile, user, updateProfile, signOut } = useAuth();
-  const { currency, setCurrency, inventory, setInventory, soundEnabled, toggleSound, theme, setTheme, language, setLanguage } = useSettings();
+  const { currency, setCurrency, inventory, setInventory, soundEnabled, toggleSound, theme, setTheme, language, setLanguage, largeText, toggleLargeText } = useSettings();
   const t = useT();
   const [notifPerm, setNotifPerm] = useState(notificationPermission());
   const [name, setName] = useState(profile?.display_name ?? '');
@@ -26,7 +29,7 @@ export function Settings() {
   const [invDraft, setInvDraft] = useState(inventory);
 
   // Members directory + PIN reset
-  interface Member { id: string; display_name: string; avatar_emoji: string | null; account_type: 'pin' | 'email' | 'anonymous' | 'unknown'; is_anonymous: boolean; }
+  interface Member { id: string; display_name: string; avatar_emoji: string | null; account_type: 'pin' | 'email' | 'anonymous' | 'unknown'; is_anonymous: boolean; is_admin: boolean; }
   const [members, setMembers] = useState<Member[]>([]);
   const [resetting, setResetting] = useState<Member | null>(null);
   const [newPin, setNewPin] = useState('');
@@ -128,6 +131,22 @@ export function Settings() {
       </Card>
 
       <Card>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="label !mb-0">Larger text</p>
+            <p className="text-xs text-ink-400">Bumps app text size 18%. Helpful for older eyes / small phones.</p>
+          </div>
+          <button
+            onClick={toggleLargeText}
+            className={`w-14 h-8 rounded-full relative transition ${largeText ? 'bg-brass-500' : 'bg-felt-700'}`}
+            aria-pressed={largeText}
+          >
+            <span className={`absolute top-1 w-6 h-6 rounded-full bg-white transition ${largeText ? 'left-7' : 'left-1'}`} />
+          </button>
+        </div>
+      </Card>
+
+      <Card>
         <p className="label">Currency</p>
         <div className="grid grid-cols-3 gap-2">
           {CURRENCIES.map((c) => (
@@ -213,22 +232,38 @@ export function Settings() {
         <ul className="divide-y divide-felt-800">
           {members.filter((m) => !m.is_anonymous).map((m) => {
             const isMe = m.id === user?.id;
+            const meIsAdmin = members.find((x) => x.id === user?.id)?.is_admin ?? false;
             return (
               <li key={m.id} className="flex items-center justify-between py-2.5">
                 <span className="flex items-center gap-3">
                   <span className="text-xl">{m.avatar_emoji ?? '🃏'}</span>
                   <span>
-                    <div className="font-semibold">{m.display_name} {isMe && <span className="text-xs text-brass-300">(you)</span>}</div>
+                    <div className="font-semibold flex items-center gap-2">
+                      {m.display_name}
+                      {isMe && <span className="text-xs text-brass-300">(you)</span>}
+                      {m.is_admin && <span className="pill bg-brass-500/20 text-brass-200 text-[9px]">ADMIN</span>}
+                    </div>
                     <div className="text-[10px] uppercase tracking-widest text-ink-500">
                       {m.account_type === 'pin' ? 'quick-join · PIN' : m.account_type === 'email' ? 'email · password' : m.account_type}
                     </div>
                   </span>
                 </span>
-                {m.account_type === 'pin' && !isMe && (
-                  <Button variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={() => { setResetting(m); setNewPin(''); setResetMsg(null); }}>
-                    🔑 Reset PIN
-                  </Button>
-                )}
+                <div className="flex gap-1">
+                  {meIsAdmin && !isMe && (
+                    <Button
+                      variant="ghost"
+                      className="!px-2 !py-1.5 text-xs"
+                      onClick={async () => {
+                        await supabase.from('profiles').update({ is_admin: !m.is_admin }).eq('id', m.id);
+                      }}
+                    >{m.is_admin ? '↓' : '↑'} admin</Button>
+                  )}
+                  {m.account_type === 'pin' && !isMe && (
+                    <Button variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={() => { setResetting(m); setNewPin(''); setResetMsg(null); }}>
+                      🔑 Reset PIN
+                    </Button>
+                  )}
+                </div>
               </li>
             );
           })}
@@ -236,6 +271,16 @@ export function Settings() {
             <li className="py-2 text-ink-400 text-sm">No members yet.</li>
           )}
         </ul>
+      </Card>
+
+      <SeasonAdmin />
+
+      <ActivityFeed />
+
+      <Card>
+        <Link to="/status" className="block text-center text-sm text-ink-300 hover:text-brass-200">
+          🩺 System status
+        </Link>
       </Card>
 
       <Card>

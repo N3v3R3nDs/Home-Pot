@@ -53,6 +53,8 @@ services:
       - ./supabase/migrations/05-member-admin.sql:/docker-entrypoint-initdb.d/zz-05-member-admin.sql
       - ./supabase/migrations/06-preserve-player-history.sql:/docker-entrypoint-initdb.d/zz-06-preserve-player-history.sql
       - ./supabase/migrations/07-audit-and-soft-delete.sql:/docker-entrypoint-initdb.d/zz-07-audit-and-soft-delete.sql
+      - ./supabase/migrations/08-club-features.sql:/docker-entrypoint-initdb.d/zz-08-club-features.sql
+      - ./supabase/migrations/09-tournament-types.sql:/docker-entrypoint-initdb.d/zz-09-tournament-types.sql
     ports:
       - "54322:5432"
 

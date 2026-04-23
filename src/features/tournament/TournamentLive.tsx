@@ -17,9 +17,11 @@ import { recordBankTx } from '@/lib/bank';
 import { haptic } from '@/lib/haptics';
 import { generateJoinCode } from '@/lib/joinCode';
 import { useT } from '@/lib/i18n';
+import { renderShareCard, shareCard } from '@/lib/shareCard';
+import { HandTimer } from '@/components/HandTimer';
 import { calculatePrizePool, distributePrizes } from './payouts';
 import { formatChips, formatDuration, formatMoney, formatPlace } from '@/lib/format';
-import { colorUpCandidates, type Denomination } from '@/lib/chipSet';
+import { colorUpCandidates, DENOMINATIONS, planColorUp, type Denomination } from '@/lib/chipSet';
 import { Chip } from '@/components/Chip';
 import { blindUpSound, eliminationSound, finalTableSound, tickSound } from '@/lib/sounds';
 import { notify } from '@/lib/notify';
@@ -73,6 +75,8 @@ export function TournamentLive() {
     addonAmount: tournament.addon_amount ?? 0,
     bountyAmount: tournament.bounty_amount,
     buyIns, rebuys, addons,
+    rakePercent: tournament.rake_percent,
+    dealerTipPercent: tournament.dealer_tip_percent,
   }) : 0;
   const bountyPool = tournament ? (buyIns + rebuys) * tournament.bounty_amount : 0;
   const totalChipsInPlay = tournament
@@ -146,6 +150,32 @@ export function TournamentLive() {
     patchTournament(updates);
     await supabase.from('tournaments').update(updates).eq('id', tournament.id);
   };
+  const shareResults = async () => {
+    setShowAdmin(false);
+    const podium = players
+      .filter((p) => p.finishing_position && p.finishing_position <= 3)
+      .map((p) => ({
+        place: p.finishing_position!,
+        name: playerName(p),
+        prize: Number(p.prize ?? 0),
+      }))
+      .sort((a, b) => a.place - b.place);
+    if (podium.length === 0) return;
+    try {
+      const blob = await renderShareCard({
+        title: tournament.name,
+        subtitle: new Date(tournament.created_at).toLocaleDateString('nb-NO', {
+          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+        }),
+        podium,
+        currency: tournament.currency,
+      });
+      await shareCard(blob, `${tournament.name.replace(/\s+/g, '-')}.png`, tournament.name);
+    } catch (e) {
+      console.error('share card failed', e);
+    }
+  };
+
   const cloneTournament = async () => {
     if (!user) return;
     setShowAdmin(false);
@@ -298,6 +328,7 @@ export function TournamentLive() {
 
   return (
     <div className="space-y-4 pb-4">
+      {tournament.state === 'running' && <HandTimer />}
       <header className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h1 className="font-display text-3xl text-brass-shine leading-tight truncate">{tournament.name}</h1>
@@ -371,29 +402,52 @@ export function TournamentLive() {
         <StatCard label={t('avgStack')} value={formatChips(avgStack)} />
       </div>
 
-      {/* Color-up alert */}
+      {/* Color-up alert with smart swap math */}
       <AnimatePresence>
-        {colorUps.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="card-felt p-4 border-amber-500/40"
-          >
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">🎨</span>
-              <div className="flex-1">
-                <div className="font-semibold text-amber-300">Color-up time</div>
-                <div className="text-xs text-ink-300">
-                  These chips are now smaller than 5% of the BB — collect them up.
+        {colorUps.length > 0 && (() => {
+          // Estimate per-player chips of the doomed denominations from the
+          // chip_distribution stored on the tournament (best info we have).
+          const dist = (tournament.chip_distribution ?? {}) as Partial<Record<string, number>>;
+          const perPlayer: Partial<Record<Denomination, number>> = {};
+          for (const d of colorUps) perPlayer[d] = Number(dist[String(d)] ?? 0);
+          const available = DENOMINATIONS.filter((d) => !colorUps.includes(d) && d > Math.max(...colorUps));
+          const plan = planColorUp(perPlayer, colorUps, available);
+          return (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="card-felt p-4 border-amber-500/40"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <span className="text-2xl">🎨</span>
+                <div className="flex-1">
+                  <div className="font-semibold text-amber-300">Color-up time</div>
+                  <div className="text-xs text-ink-300">
+                    {colorUps.map((d) => `T${d}`).join(', ')} are smaller than 5% of the BB.
+                  </div>
+                </div>
+                <div className="flex gap-1">
+                  {colorUps.map((d) => <Chip key={d} denom={d as Denomination} size="sm" />)}
                 </div>
               </div>
-              <div className="flex gap-1">
-                {colorUps.map((d) => <Chip key={d} denom={d as Denomination} size="sm" />)}
-              </div>
-            </div>
-          </motion.div>
-        )}
+              {plan.removedValuePerPlayer > 0 && plan.give.length > 0 && (
+                <div className="bg-felt-950/60 rounded-lg px-3 py-2 mt-2 text-xs text-ink-200">
+                  <div className="text-[10px] uppercase tracking-widest text-amber-300 mb-1">
+                    Swap (per player)
+                  </div>
+                  Collect {colorUps.map((d) => {
+                    const n = perPlayer[d] ?? 0;
+                    return n > 0 ? `${n}× T${d}` : null;
+                  }).filter(Boolean).join(', ')}
+                  {' → give back '}
+                  {plan.give.map((g) => `${g.count}× T${g.give}`).join(' + ')}
+                  {plan.remainder > 0 && <span className="text-amber-300"> · race off T{plan.remainder}</span>}
+                </div>
+              )}
+            </motion.div>
+          );
+        })()}
       </AnimatePresence>
 
       {/* Payouts */}
@@ -431,7 +485,8 @@ export function TournamentLive() {
                   <span className="text-xl">{playerAvatar(p)}</span>
                   <div>
                     <div className="font-semibold">{playerName(p)}</div>
-                    <div className="text-xs text-ink-400 flex gap-3">
+                    <div className="text-xs text-ink-400 flex gap-3 items-center">
+                      {p.late_reg && p.entry_level && <span className="pill bg-amber-500/20 text-amber-200 text-[9px]">late · L{p.entry_level}</span>}
                       {p.rebuys > 0 && <span>🔁 {p.rebuys}</span>}
                       {p.addons > 0 && <span>➕ {p.addons}</span>}
                       {p.bounties_won > 0 && <span>💀 {p.bounties_won}</span>}
@@ -439,7 +494,7 @@ export function TournamentLive() {
                   </div>
                 </div>
                 <div className="flex gap-1">
-                  {clock.levelIndex < tournament.rebuys_until_level && (
+                  {tournament.tournament_type !== 'freezeout' && clock.levelIndex < tournament.rebuys_until_level && (
                     <Button variant="ghost" className="!px-3 !py-2 text-xs" onClick={() => setChipUp({ player: p, kind: 'rebuy' })}>{t('re')}</Button>
                   )}
                   <Button variant="ghost" className="!px-3 !py-2 text-xs" onClick={() => setChipUp({ player: p, kind: 'addon' })}>{t('add')}</Button>
@@ -512,9 +567,14 @@ export function TournamentLive() {
         }
         const addNew = async () => {
           if (!user || !claimName.trim()) return;
+          // If the tournament has already started, mark as late registration
+          // so stats can distinguish them from full-stack starters.
+          const isLate = tournament.state !== 'setup' && clock.levelIndex > 0;
           await supabase.from('tournament_players').insert({
             tournament_id: tournament.id,
             profile_id: user.id,
+            late_reg: isLate,
+            entry_level: isLate ? clock.levelIndex + 1 : null,
           });
           await supabase.from('profiles')
             .update({ display_name: claimName.trim() })
@@ -582,8 +642,21 @@ export function TournamentLive() {
               </div>
               <div className="bg-felt-950/70 rounded-xl px-3 py-2 font-mono text-xs text-ink-200 break-all mb-3">{url}</div>
               <Button variant="ghost" full onClick={() => navigator.clipboard?.writeText(url)}>
-                Copy link
+                Copy player link
               </Button>
+              {tournament.join_code && (
+                <Button
+                  variant="ghost"
+                  full
+                  className="mt-2"
+                  onClick={() => {
+                    const publicUrl = `${window.location.origin}/t/${tournament.join_code}/view`;
+                    navigator.clipboard?.writeText(publicUrl);
+                  }}
+                >
+                  📺 Copy spectator link (no login)
+                </Button>
+              )}
               {isLocal && (
                 <p className="text-amber-400 text-xs mt-3">
                   ⚠ You're on <span className="font-mono">localhost</span> — friends on other phones can't reach this URL.
@@ -604,6 +677,11 @@ export function TournamentLive() {
           <Button variant="ghost" full onClick={cloneTournament}>
             📋 Clone for next time
           </Button>
+          {tournament.state === 'finished' && (
+            <Button variant="ghost" full onClick={shareResults}>
+              📤 Share results card
+            </Button>
+          )}
           {tournament.state !== 'finished' && (
             <Button variant="ghost" full onClick={endTournament}>
               🏁 End tournament now

@@ -5,6 +5,7 @@ import { registerSW } from 'virtual:pwa-register';
 import App from './App';
 import './index.css';
 import { applyTheme, type ThemeId } from './lib/themes';
+import { startQueueWorker } from './lib/offlineQueue';
 
 // When a new version is deployed, force-reload all open clients so they pick
 // up the new bundle immediately. Otherwise the browser keeps serving the
@@ -18,6 +19,8 @@ registerSW({
     /* noop */
   },
 });
+
+startQueueWorker();
 
 // Apply persisted theme before first paint to avoid a flash.
 try {

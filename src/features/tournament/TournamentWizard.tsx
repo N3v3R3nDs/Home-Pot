@@ -18,7 +18,10 @@ import {
   type Denomination,
 } from '@/lib/chipSet';
 import { formatChips, formatMoney } from '@/lib/format';
-import type { Profile } from '@/types/db';
+import { useToast } from '@/components/ui/Toast';
+import { useEffect } from 'react';
+import { useSeason } from '@/store/season';
+import type { Profile, TournamentTemplate } from '@/types/db';
 
 type Step = 'setup' | 'players' | 'structure' | 'review';
 
@@ -31,6 +34,9 @@ export function TournamentWizard() {
 
   const [step, setStep] = useState<Step>('setup');
 
+  const toast = useToast();
+  const { activeSeasonId } = useSeason();
+
   // setup
   const [name, setName] = useState(`Poker night ${new Date().toLocaleDateString('nb-NO')}`);
   const [buyIn, setBuyIn] = useState(200);
@@ -38,6 +44,45 @@ export function TournamentWizard() {
   const [addonAmount, setAddonAmount] = useState(200);
   const [bountyAmount, setBountyAmount] = useState(0);
   const [rebuysUntilLevel, setRebuysUntilLevel] = useState(6);
+  const [rakePercent, setRakePercent] = useState(0);
+  const [dealerTipPercent, setDealerTipPercent] = useState(0);
+  const [tournamentType, setTournamentType] = useState<'rebuy' | 'freezeout' | 'reentry' | 'bounty'>('rebuy');
+
+  // templates
+  const [templates, setTemplates] = useState<TournamentTemplate[]>([]);
+  useEffect(() => {
+    supabase.from('tournament_templates').select('*').order('created_at', { ascending: false }).then(({ data }) => {
+      setTemplates((data ?? []) as TournamentTemplate[]);
+    });
+  }, []);
+
+  const applyTemplate = (tpl: TournamentTemplate) => {
+    setName(tpl.name);
+    setBuyIn(Number(tpl.buy_in));
+    setRebuyAmount(Number(tpl.rebuy_amount ?? 0));
+    setAddonAmount(Number(tpl.addon_amount ?? 0));
+    setBountyAmount(Number(tpl.bounty_amount));
+    setRebuysUntilLevel(tpl.rebuys_until_level);
+    setRakePercent(Number(tpl.rake_percent));
+    setDealerTipPercent(Number(tpl.dealer_tip_percent));
+    setStackSize(tpl.starting_stack);
+    toast(`Loaded template: ${tpl.name}`, 'success');
+  };
+
+  const saveAsTemplate = async () => {
+    if (!user) return;
+    const tpl = {
+      owner_id: user.id, name,
+      buy_in: buyIn, rebuy_amount: rebuyAmount, addon_amount: addonAmount,
+      starting_stack: effectiveStack, rebuy_stack: effectiveStack,
+      addon_stack: Math.round(effectiveStack * 1.5),
+      bounty_amount: bountyAmount, rebuys_until_level: rebuysUntilLevel,
+      blind_structure: template.levels, payout_structure: payoutSlots,
+      rake_percent: rakePercent, dealer_tip_percent: dealerTipPercent, currency,
+    };
+    const { error } = await supabase.from('tournament_templates').insert(tpl);
+    if (error) toast(error.message, 'error'); else toast('Template saved 📋', 'success');
+  };
 
   // players
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
@@ -124,6 +169,10 @@ export function TournamentWizard() {
           chip_distribution: stackSuggestion?.perPlayer ?? null,
           currency,
           join_code: code,
+          rake_percent: rakePercent,
+          dealer_tip_percent: dealerTipPercent,
+          tournament_type: tournamentType,
+          season_id: activeSeasonId,
         })
         .select()
         .single();
@@ -165,6 +214,42 @@ export function TournamentWizard() {
 
       {step === 'setup' && (
         <Card className="space-y-4">
+          {templates.length > 0 && (
+            <div>
+              <p className="label">Load template</p>
+              <div className="flex flex-wrap gap-2">
+                {templates.map((tpl) => (
+                  <button
+                    key={tpl.id}
+                    onClick={() => applyTemplate(tpl)}
+                    className="pill bg-felt-800/70 border border-felt-700 hover:border-brass-500/50"
+                  >📋 {tpl.name}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <p className="label">Format</p>
+            <div className="grid grid-cols-4 gap-2">
+              {([
+                ['rebuy', 'Re-buy', '🔁'],
+                ['freezeout', 'Freezeout', '🧊'],
+                ['reentry', 'Re-entry', '↻'],
+                ['bounty', 'Bounty', '💀'],
+              ] as const).map(([id, label, ico]) => (
+                <button
+                  key={id}
+                  onClick={() => setTournamentType(id)}
+                  className={`p-2 rounded-xl border text-center text-xs ${
+                    tournamentType === id ? 'bg-brass-500/15 border-brass-500/50 text-brass-100' : 'bg-felt-900/60 border-felt-700 text-ink-300'
+                  }`}
+                >
+                  <div className="text-lg">{ico}</div>
+                  <div className="font-semibold mt-1">{label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
           <Input label="Tournament name" value={name} onChange={(e) => setName(e.target.value)} />
           <div className="grid grid-cols-2 gap-3">
             <Input label="Buy-in" type="number" value={buyIn} suffix={currency}
@@ -178,10 +263,19 @@ export function TournamentWizard() {
               onChange={(e) => setAddonAmount(Number(e.target.value))} />
             <Input label="Re-buys until level" type="number" value={rebuysUntilLevel}
               onChange={(e) => setRebuysUntilLevel(Number(e.target.value))} />
+            <Input label="Rake %" type="number" value={rakePercent} suffix="%"
+              onChange={(e) => setRakePercent(Number(e.target.value))}
+              hint="Off the top of the prize pool. 0 = none." />
+            <Input label="Dealer tip %" type="number" value={dealerTipPercent} suffix="%"
+              onChange={(e) => setDealerTipPercent(Number(e.target.value))}
+              hint="Off the top, to the dealer/host." />
           </div>
-          <Button full onClick={() => { setStep('players'); loadProfiles(); }}>
-            Next: Pick players →
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={saveAsTemplate}>📋 Save as template</Button>
+            <Button full onClick={() => { setStep('players'); loadProfiles(); }}>
+              Next: Pick players →
+            </Button>
+          </div>
         </Card>
       )}
 

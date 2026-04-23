@@ -12,11 +12,13 @@ interface SettingsState {
   soundEnabled: boolean;
   theme: ThemeId;
   language: Lang;
+  largeText: boolean;
   setCurrency: (c: string) => void;
   setInventory: (inv: ChipInventory) => void;
   toggleSound: () => void;
   setTheme: (t: ThemeId) => void;
   setLanguage: (l: Lang) => void;
+  toggleLargeText: () => void;
 }
 
 export const useSettings = create<SettingsState>()(
@@ -27,6 +29,7 @@ export const useSettings = create<SettingsState>()(
       soundEnabled: true,
       theme: 'felt-green' as ThemeId,
       language: 'no' as Lang,
+      largeText: false,
       setCurrency: (c) => set({ currency: c }),
       setInventory: (inv) => set({ inventory: inv }),
       toggleSound: () => {
@@ -39,11 +42,21 @@ export const useSettings = create<SettingsState>()(
         applyTheme(t);
       },
       setLanguage: (l) => set({ language: l }),
+      toggleLargeText: () => {
+        const next = !get().largeText;
+        set({ largeText: next });
+        if (typeof document !== 'undefined') {
+          document.documentElement.classList.toggle('large-text', next);
+        }
+      },
     }),
     {
       name: 'home-pot-settings',
       onRehydrateStorage: () => (state) => {
         if (state?.theme) applyTheme(state.theme);
+        if (state?.largeText && typeof document !== 'undefined') {
+          document.documentElement.classList.add('large-text');
+        }
       },
     },
   ),

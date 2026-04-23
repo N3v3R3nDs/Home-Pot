@@ -246,6 +246,57 @@ export function colorUpCandidates(currentBigBlind: number): Denomination[] {
 }
 
 /**
+ * Plan a color-up: given chips to remove (worth `removedValue`) and the
+ * available bigger denominations a player should receive in exchange, return
+ * the swap math.
+ *
+ * Greedy — pick the largest denomination whose value ≤ removedValue, and so on.
+ */
+export interface ColorUpStep {
+  /** Denomination given back (the bigger one). */
+  give: Denomination;
+  /** How many chips of `give` to hand back per player. */
+  count: number;
+}
+export interface ColorUpPlan {
+  removed: Denomination[];                   // denominations being collected
+  removedValuePerPlayer: number;             // total value collected per player
+  give: ColorUpStep[];                       // exchange chips
+  remainder: number;                         // un-given chip value (race-off)
+}
+
+/**
+ * Compute color-up suggestion for one player.
+ * `playerChips` is what *one* player holds in the doomed denominations.
+ */
+export function planColorUp(
+  playerChips: Partial<Record<Denomination, number>>,
+  doomed: Denomination[],
+  available: Denomination[],
+): ColorUpPlan {
+  const removedValuePerPlayer = doomed.reduce(
+    (s, d) => s + d * (playerChips[d] ?? 0), 0,
+  );
+  const give: ColorUpStep[] = [];
+  let remaining = removedValuePerPlayer;
+  // Greedy from largest available denomination down
+  const sorted = [...available].sort((a, b) => b - a);
+  for (const d of sorted) {
+    const n = Math.floor(remaining / d);
+    if (n > 0) {
+      give.push({ give: d, count: n });
+      remaining -= n * d;
+    }
+  }
+  return {
+    removed: doomed,
+    removedValuePerPlayer,
+    give,
+    remainder: remaining,
+  };
+}
+
+/**
  * Suggest a starting stack value (per player) given player count and the
  * inventory. Aims for ~50–100 big blinds at the opening level using a
  * round-number stack like 5,000 / 10,000 / 25,000.

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
 import { supabase } from '@/lib/supabase';
 import { useSettings } from '@/store/settings';
+import { useSeason } from '@/store/season';
 import { formatMoney } from '@/lib/format';
 import type {
   CashBuyIn, CashGame, CashGamePlayer, Profile, Tournament, TournamentPlayer,
@@ -21,9 +22,36 @@ interface MemberRollup {
 
 type Tab = 'season' | 'tournaments' | 'cash';
 
+const MONTH_FILTERS: { id: string; label: string; daysBack?: number }[] = [
+  { id: 'all',  label: 'All time' },
+  { id: 'm',    label: 'This month',  daysBack: 30 },
+  { id: '3m',   label: '3 months',    daysBack: 90 },
+  { id: '12m',  label: 'Year',        daysBack: 365 },
+];
+
+const cutoffForPeriod = (id: string): number => {
+  const days = MONTH_FILTERS.find((f) => f.id === id)?.daysBack;
+  return days ? Date.now() - days * 86400000 : 0;
+};
+
+function downloadCsv(filename: string, rows: (string | number)[][]) {
+  const csv = rows.map((r) => r.map((c) => {
+    const s = String(c ?? '');
+    return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function History() {
   const { currency } = useSettings();
+  const { activeSeasonId } = useSeason();
   const [tab, setTab] = useState<Tab>('season');
+  const [search, setSearch] = useState('');
+  const [period, setPeriod] = useState<string>('all');
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [tournPlayers, setTournPlayers] = useState<TournamentPlayer[]>([]);
   const [cashGames, setCashGames] = useState<CashGame[]>([]);
@@ -33,10 +61,13 @@ export function History() {
 
   useEffect(() => {
     const load = async () => {
-      const [{ data: tours }, { data: cgs }] = await Promise.all([
-        supabase.from('tournaments').select('*').is('deleted_at', null).eq('state', 'finished').order('created_at', { ascending: false }),
-        supabase.from('cash_games').select('*').is('deleted_at', null).eq('state', 'finished').order('created_at', { ascending: false }),
-      ]);
+      let tq = supabase.from('tournaments').select('*').is('deleted_at', null).eq('state', 'finished').order('created_at', { ascending: false });
+      let cq = supabase.from('cash_games').select('*').is('deleted_at', null).eq('state', 'finished').order('created_at', { ascending: false });
+      if (activeSeasonId) {
+        tq = tq.eq('season_id', activeSeasonId);
+        cq = cq.eq('season_id', activeSeasonId);
+      }
+      const [{ data: tours }, { data: cgs }] = await Promise.all([tq, cq]);
       const ts = (tours ?? []) as Tournament[];
       const cs = (cgs ?? []) as CashGame[];
       setTournaments(ts); setCashGames(cs);
@@ -78,20 +109,23 @@ export function History() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, load)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, []);
+  }, [activeSeasonId]);
 
   const memberKey = (p: { profile_id?: string | null; guest_name?: string | null }) =>
     p.profile_id ? `p:${p.profile_id}` : `g:${p.guest_name}`;
 
   const seasonRollup: MemberRollup[] = useMemo(() => {
+    const periodCutoff = cutoffForPeriod(period);
     const map: Record<string, MemberRollup> = {};
     const ensure = (key: string, name: string, avatar: string): MemberRollup => {
       if (!map[key]) map[key] = { id: key, name, avatar, tournamentCashes: 0, tournamentWins: 0, knockouts: 0, cashSessions: 0, netNok: 0 };
       return map[key];
     };
     const tMap = new Map(tournaments.map((t) => [t.id, t]));
+    const inPeriod = (iso: string) => !periodCutoff || Date.parse(iso) >= periodCutoff;
     for (const p of tournPlayers) {
       const t = tMap.get(p.tournament_id); if (!t) continue;
+      if (!inPeriod(t.created_at)) continue;
       const k = memberKey(p);
       const name = p.profile_id ? profileMap[p.profile_id]?.display_name ?? '…' : (p.guest_name ?? 'Guest');
       const avatar = p.profile_id ? profileMap[p.profile_id]?.avatar_emoji ?? '🃏' : '👤';
@@ -103,9 +137,12 @@ export function History() {
       if (p.finishing_position === 1) r.tournamentWins += 1;
       r.knockouts += p.bounties_won;
     }
+    const cMap = new Map(cashGames.map((c) => [c.id, c]));
     const buyInTotals: Record<string, number> = {};
     for (const b of cashBuyIns) buyInTotals[b.cash_game_player_id] = (buyInTotals[b.cash_game_player_id] ?? 0) + Number(b.amount);
     for (const cp of cashPlayers) {
+      const g = cMap.get(cp.cash_game_id); if (!g) continue;
+      if (!inPeriod(g.created_at)) continue;
       const k = memberKey(cp);
       const name = cp.profile_id ? profileMap[cp.profile_id]?.display_name ?? '…' : (cp.guest_name ?? 'Guest');
       const avatar = cp.profile_id ? profileMap[cp.profile_id]?.avatar_emoji ?? '🃏' : '👤';
@@ -116,7 +153,7 @@ export function History() {
       r.cashSessions += 1;
     }
     return Object.values(map).sort((a, b) => b.netNok - a.netNok);
-  }, [tournaments, tournPlayers, cashGames, cashPlayers, cashBuyIns, profileMap]);
+  }, [tournaments, tournPlayers, cashGames, cashPlayers, cashBuyIns, profileMap, period]);
 
   const cashRows = useMemo(() => {
     const buyInTotals: Record<string, number> = {};
@@ -139,11 +176,40 @@ export function History() {
     });
   }, [cashGames, cashPlayers, cashBuyIns, profileMap]);
 
+  const filteredLeaderboard = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return seasonRollup.filter((r) => !q || r.name.toLowerCase().includes(q));
+  }, [seasonRollup, search]);
+
+  const exportLeaderboardCsv = () => {
+    downloadCsv(`home-pot-leaderboard-${new Date().toISOString().slice(0,10)}.csv`, [
+      ['Rank', 'Name', 'Tournament wins', 'Tournament cashes', 'Knockouts', 'Cash sessions', 'Net'],
+      ...filteredLeaderboard.map((m, i) => [i + 1, m.name, m.tournamentWins, m.tournamentCashes, m.knockouts, m.cashSessions, m.netNok]),
+    ]);
+  };
+
   return (
     <div className="space-y-4">
-      <header>
+      <header className="flex items-center justify-between gap-2">
         <h1 className="font-display text-3xl text-brass-shine">Season stats</h1>
+        <button onClick={exportLeaderboardCsv} className="btn-ghost text-xs !px-3 !py-2" title="Export CSV">⬇ CSV</button>
       </header>
+
+      <div className="flex gap-2">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search member…"
+          className="input flex-1 text-sm"
+        />
+        <select
+          value={period}
+          onChange={(e) => setPeriod(e.target.value)}
+          className="input w-auto text-sm"
+        >
+          {MONTH_FILTERS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+        </select>
+      </div>
 
       <div className="grid grid-cols-3 gap-2">
         {(['season', 'tournaments', 'cash'] as Tab[]).map((t) => (
@@ -160,12 +226,12 @@ export function History() {
       </div>
 
       {tab === 'season' && (
-        seasonRollup.length === 0 ? (
+        filteredLeaderboard.length === 0 ? (
           <Card className="text-center py-10 text-ink-400">No completed games yet — go play.</Card>
         ) : (
           <Card>
             <ul className="divide-y divide-felt-800">
-              {seasonRollup.map((m, i) => {
+              {filteredLeaderboard.map((m, i) => {
                 const profileId = m.id.startsWith('p:') ? m.id.slice(2) : null;
                 const inner = (
                   <>

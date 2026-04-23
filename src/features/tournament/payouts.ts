@@ -69,7 +69,8 @@ export function presetById(id: string): PayoutPreset {
 
 /**
  * Compute the prize pool from a tournament's player aggregates.
- * Excludes bounties, which are paid out per-knockout.
+ * Excludes bounties (paid per knockout) and any rake / dealer tip taken
+ * off the top before payouts.
  */
 export function calculatePrizePool(args: {
   buyIn: number;
@@ -79,11 +80,15 @@ export function calculatePrizePool(args: {
   buyIns: number;
   rebuys: number;
   addons: number;
+  rakePercent?: number;
+  dealerTipPercent?: number;
 }): number {
   const buyInPart = args.buyIns * (args.buyIn - args.bountyAmount);
   const rebuyPart = args.rebuys * (args.rebuyAmount - args.bountyAmount);
   const addonPart = args.addons * args.addonAmount;
-  return Math.max(0, buyInPart + rebuyPart + addonPart);
+  const gross = Math.max(0, buyInPart + rebuyPart + addonPart);
+  const cuts = (Number(args.rakePercent ?? 0) + Number(args.dealerTipPercent ?? 0)) / 100;
+  return Math.max(0, Math.round(gross * (1 - cuts)));
 }
 
 /** Compute prize per place from total pool + percent slots. */

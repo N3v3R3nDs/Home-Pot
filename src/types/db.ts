@@ -26,6 +26,7 @@ export interface ChipDistribution {
 }
 
 export type TournamentState = 'setup' | 'running' | 'paused' | 'finished';
+export type TournamentType = 'rebuy' | 'freezeout' | 'reentry' | 'bounty';
 export type CashGameState = 'running' | 'finished';
 
 export interface Profile {
@@ -75,6 +76,39 @@ export interface Tournament {
   pause_elapsed_ms: number;
   currency: string;
   join_code: string | null;
+  rake_percent: number;
+  dealer_tip_percent: number;
+  tournament_type: TournamentType;
+  season_id: string | null;
+  deleted_at: string | null;
+  created_at: string;
+}
+
+export interface TournamentTemplate {
+  id: string;
+  owner_id: string;
+  name: string;
+  buy_in: number;
+  rebuy_amount: number | null;
+  addon_amount: number | null;
+  starting_stack: number;
+  rebuy_stack: number | null;
+  addon_stack: number | null;
+  bounty_amount: number;
+  rebuys_until_level: number;
+  blind_structure: BlindLevel[];
+  payout_structure: PayoutSlot[];
+  rake_percent: number;
+  dealer_tip_percent: number;
+  currency: string;
+  created_at: string;
+}
+
+export interface Season {
+  id: string;
+  name: string;
+  starts_on: string;
+  ends_on: string;
   created_at: string;
 }
 
@@ -91,6 +125,8 @@ export interface TournamentPlayer {
   eliminated_by: string | null;
   eliminated_at: string | null;
   prize: number;
+  late_reg: boolean;
+  entry_level: number | null;
   created_at: string;
 }
 
@@ -104,6 +140,8 @@ export interface CashGame {
   currency: string;
   state: CashGameState;
   join_code: string | null;
+  season_id: string | null;
+  deleted_at: string | null;
   created_at: string;
   ended_at: string | null;
 }

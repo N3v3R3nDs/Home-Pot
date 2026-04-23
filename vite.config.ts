@@ -13,6 +13,19 @@ export default defineConfig({
     host: true,
     port: 5173,
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Split heavy vendor libs into their own long-cacheable chunks so
+        // repeat visits don't re-download React/Supabase/Framer Motion.
+        manualChunks: {
+          react:    ['react', 'react-dom', 'react-router-dom'],
+          supabase: ['@supabase/supabase-js'],
+          motion:   ['framer-motion'],
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({
