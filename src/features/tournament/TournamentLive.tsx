@@ -9,14 +9,20 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
+import { useConfirm } from '@/components/ui/Confirm';
+import { useUndo } from '@/components/ui/Undo';
 import { QRCode } from '@/components/QRCode';
 import { supabase } from '@/lib/supabase';
 import { recordBankTx } from '@/lib/bank';
+import { haptic } from '@/lib/haptics';
+import { generateJoinCode } from '@/lib/joinCode';
+import { useT } from '@/lib/i18n';
 import { calculatePrizePool, distributePrizes } from './payouts';
 import { formatChips, formatDuration, formatMoney, formatPlace } from '@/lib/format';
 import { colorUpCandidates, type Denomination } from '@/lib/chipSet';
 import { Chip } from '@/components/Chip';
 import { blindUpSound, eliminationSound, finalTableSound, tickSound } from '@/lib/sounds';
+import { notify } from '@/lib/notify';
 import type { Profile, TournamentPlayer } from '@/types/db';
 
 export function TournamentLive() {
@@ -25,6 +31,9 @@ export function TournamentLive() {
   const { user, profile, refreshProfile } = useAuth();
   const { currency, soundEnabled } = useSettings();
   const { tournament, players, loading, patchTournament, patchPlayer } = useTournament(id);
+  const confirm = useConfirm();
+  const undo = useUndo();
+  const t = useT();
   const clock = useTournamentClock(tournament);
 
   const [profileMap, setProfileMap] = useState<Record<string, Profile>>({});
@@ -78,9 +87,11 @@ export function TournamentLive() {
   const lastLevelRef = useRef<number | null>(null);
   const lastAliveRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!tournament || !soundEnabled) return;
+    if (!tournament) return;
     if (lastLevelRef.current !== null && lastLevelRef.current !== tournament.current_level) {
-      blindUpSound();
+      if (soundEnabled) blindUpSound();
+      const lvl = tournament.blind_structure[tournament.current_level];
+      if (lvl) notify(`Blinds up · ${lvl.sb}/${lvl.bb}`, tournament.name);
     }
     lastLevelRef.current = tournament.current_level;
   }, [tournament, soundEnabled]);
@@ -100,8 +111,8 @@ export function TournamentLive() {
   // Color-up suggestions
   const colorUps = clock.level ? colorUpCandidates(clock.level.bb) : [];
 
-  if (loading) return <div className="text-ink-300">Loading tournament…</div>;
-  if (!tournament) return <div className="text-ink-300">Tournament not found.</div>;
+  if (loading) return <div className="text-ink-300">{t('loading')}</div>;
+  if (!tournament) return <div className="text-ink-300">—</div>;
 
   // ---------- Actions: optimistic first, DB second ------------------------
   const startOrResume = async () => {
@@ -135,6 +146,34 @@ export function TournamentLive() {
     patchTournament(updates);
     await supabase.from('tournaments').update(updates).eq('id', tournament.id);
   };
+  const cloneTournament = async () => {
+    if (!user) return;
+    setShowAdmin(false);
+    let inserted: { id: string } | null = null;
+    for (let i = 0; i < 5 && !inserted; i++) {
+      const code = generateJoinCode();
+      const res = await supabase.from('tournaments').insert({
+        host_id: user.id,
+        name: `${tournament.name} (copy)`,
+        buy_in: tournament.buy_in,
+        rebuy_amount: tournament.rebuy_amount,
+        addon_amount: tournament.addon_amount,
+        starting_stack: tournament.starting_stack,
+        rebuy_stack: tournament.rebuy_stack,
+        addon_stack: tournament.addon_stack,
+        bounty_amount: tournament.bounty_amount,
+        rebuys_until_level: tournament.rebuys_until_level,
+        blind_structure: tournament.blind_structure,
+        payout_structure: tournament.payout_structure,
+        chip_distribution: tournament.chip_distribution,
+        currency: tournament.currency,
+        join_code: code,
+      }).select().single();
+      if (!res.error) inserted = res.data as { id: string };
+    }
+    if (inserted) navigate(`/tournament/${inserted.id}`);
+  };
+
   const saveRename = async () => {
     if (renaming === null || !renaming.trim()) return;
     const newName = renaming.trim();
@@ -143,17 +182,26 @@ export function TournamentLive() {
     await supabase.from('tournaments').update({ name: newName }).eq('id', tournament.id);
   };
   const endTournament = async () => {
-    if (!confirm('End this tournament now? It moves to History.')) return;
+    if (!await confirm({
+      title: 'End tournament?',
+      message: 'It moves to History. Bank transactions are preserved.',
+      confirmLabel: '🏁 End now',
+    })) return;
     patchTournament({ state: 'finished' });
     setShowAdmin(false);
     navigate('/');
     await supabase.from('tournaments').update({ state: 'finished' }).eq('id', tournament.id);
   };
   const deleteTournament = async () => {
-    if (!confirm(`Delete "${tournament.name}" and all its players? This cannot be undone.`)) return;
-    await supabase.from('tournaments').delete().eq('id', tournament.id);
+    if (!await confirm({
+      title: `Delete "${tournament.name}"?`,
+      message: 'This removes the tournament and all player records. Bank transactions are kept in the ledger.',
+      confirmLabel: '🗑 Delete',
+      destructive: true,
+    })) return;
     setShowAdmin(false);
     navigate('/');
+    await supabase.from('tournaments').update({ deleted_at: new Date().toISOString() }).eq('id', tournament.id);
   };
   const confirmChipUp = async () => {
     if (!chipUp) return;
@@ -186,21 +234,43 @@ export function TournamentLive() {
       finishing_position: place,
       prize: payout,
     };
+    // Snapshot prior state for undo
+    const priorTargetState = {
+      eliminated_at: target.eliminated_at,
+      eliminated_by: target.eliminated_by,
+      finishing_position: target.finishing_position,
+      prize: target.prize,
+    };
+    const killer = killerId ? players.find((p) => p.id === killerId) : null;
+    const priorKillerBounties = killer?.bounties_won ?? 0;
+
     patchPlayer(target.id, targetPatch);
     if (soundEnabled) eliminationSound();
+    haptic('warning');
     setEliminating(null);
 
-    await supabase.from('tournament_players').update(targetPatch).eq('id', target.id);
+    // Show undo toast — DB writes happen on commit (5s timeout)
+    undo({
+      message: `${playerName(target)} busted ${formatPlace(place)}`,
+      onUndo: () => {
+        patchPlayer(target.id, priorTargetState);
+        if (killer) patchPlayer(killer.id, { bounties_won: priorKillerBounties });
+        // Best-effort DB rollback in case the commit-write somehow already fired:
+        void supabase.from('tournament_players').update(priorTargetState).eq('id', target.id);
+        if (killer) void supabase.from('tournament_players')
+          .update({ bounties_won: priorKillerBounties }).eq('id', killer.id);
+      },
+      onConfirm: async () => {
+        await supabase.from('tournament_players').update(targetPatch).eq('id', target.id);
+        if (killer && tournament.bounty_amount > 0) {
+          patchPlayer(killer.id, { bounties_won: priorKillerBounties + 1 });
+          await supabase.from('tournament_players')
+            .update({ bounties_won: priorKillerBounties + 1 })
+            .eq('id', killer.id);
+        }
+      },
+    });
 
-    if (killerId && tournament.bounty_amount > 0) {
-      const killer = players.find((p) => p.id === killerId);
-      if (killer) {
-        patchPlayer(killer.id, { bounties_won: killer.bounties_won + 1 });
-        await supabase.from('tournament_players')
-          .update({ bounties_won: killer.bounties_won + 1 })
-          .eq('id', killer.id);
-      }
-    }
     if (alive.length === 2) {
       // Last one standing is also "eliminated" (1st place) so we record their prize
       const remaining = alive.find((p) => p.id !== target.id);
@@ -232,7 +302,7 @@ export function TournamentLive() {
         <div className="min-w-0">
           <h1 className="font-display text-3xl text-brass-shine leading-tight truncate">{tournament.name}</h1>
           <p className="text-ink-400 text-sm mt-1">
-            {tournament.state.toUpperCase()} · {alive.length} of {players.length} alive
+            {t(tournament.state === 'paused' ? 'paused' : tournament.state === 'running' ? 'running' : tournament.state === 'finished' ? 'finished' : 'paused').toUpperCase()} · {alive.length}/{players.length} {t('alive').toLowerCase()}
           </p>
         </div>
         <div className="flex gap-2 shrink-0 items-center">
@@ -285,20 +355,20 @@ export function TournamentLive() {
         </motion.div>
         <div className="mt-4 flex gap-2">
           {tournament.state === 'running' ? (
-            <Button variant="ghost" full onClick={pause}>⏸ Pause</Button>
+            <Button variant="ghost" full onClick={pause}>{t('pause')}</Button>
           ) : (
-            <Button full onClick={startOrResume}>▶ {tournament.state === 'setup' ? 'Start' : 'Resume'}</Button>
+            <Button full onClick={startOrResume}>{tournament.state === 'setup' ? t('start') : t('resume')}</Button>
           )}
-          <Button variant="ghost" onClick={() => advanceLevel(-1)} disabled={clock.levelIndex === 0}>◀ Lvl</Button>
-          <Button variant="ghost" onClick={() => advanceLevel(1)}>Lvl ▶</Button>
+          <Button variant="ghost" onClick={() => advanceLevel(-1)} disabled={clock.levelIndex === 0}>◀ {t('level')}</Button>
+          <Button variant="ghost" onClick={() => advanceLevel(1)}>{t('level')} ▶</Button>
         </div>
       </Card>
 
       {/* Money */}
       <div className="grid grid-cols-3 gap-3">
-        <StatCard label="Prize pool" value={formatMoney(prizePool, currency)} />
-        <StatCard label="Bounty pool" value={tournament.bounty_amount ? formatMoney(bountyPool, currency) : '—'} />
-        <StatCard label="Avg stack" value={formatChips(avgStack)} />
+        <StatCard label={t('prizePool')} value={formatMoney(prizePool, currency)} />
+        <StatCard label={t('bountyPool')} value={tournament.bounty_amount ? formatMoney(bountyPool, currency) : '—'} />
+        <StatCard label={t('avgStack')} value={formatChips(avgStack)} />
       </div>
 
       {/* Color-up alert */}
@@ -328,7 +398,7 @@ export function TournamentLive() {
 
       {/* Payouts */}
       <Card>
-        <p className="label">Payouts (live)</p>
+        <p className="label">{t('payoutsLive')}</p>
         <div className="grid grid-cols-2 gap-2">
           {payouts.map((p) => (
             <div key={p.place} className="flex items-center justify-between bg-felt-950/60 rounded-lg px-3 py-2">
@@ -344,7 +414,7 @@ export function TournamentLive() {
       {/* Alive players */}
       <Card>
         <div className="flex items-center justify-between mb-3">
-          <p className="label !mb-0">Alive — {alive.length}</p>
+          <p className="label !mb-0">{t('alive')} — {alive.length}</p>
         </div>
         <ul className="space-y-2">
           <AnimatePresence initial={false}>
@@ -370,10 +440,10 @@ export function TournamentLive() {
                 </div>
                 <div className="flex gap-1">
                   {clock.levelIndex < tournament.rebuys_until_level && (
-                    <Button variant="ghost" className="!px-3 !py-2 text-xs" onClick={() => setChipUp({ player: p, kind: 'rebuy' })}>Re</Button>
+                    <Button variant="ghost" className="!px-3 !py-2 text-xs" onClick={() => setChipUp({ player: p, kind: 'rebuy' })}>{t('re')}</Button>
                   )}
-                  <Button variant="ghost" className="!px-3 !py-2 text-xs" onClick={() => setChipUp({ player: p, kind: 'addon' })}>Add</Button>
-                  <Button variant="danger" className="!px-3 !py-2 text-xs" onClick={() => setEliminating(p)}>Bust</Button>
+                  <Button variant="ghost" className="!px-3 !py-2 text-xs" onClick={() => setChipUp({ player: p, kind: 'addon' })}>{t('add')}</Button>
+                  <Button variant="danger" className="!px-3 !py-2 text-xs" onClick={() => setEliminating(p)}>{t('bust')}</Button>
                 </div>
               </motion.li>
             ))}
@@ -384,7 +454,7 @@ export function TournamentLive() {
       {/* Eliminated */}
       {out.length > 0 && (
         <Card>
-          <p className="label">Eliminated</p>
+          <p className="label">{t('eliminated')}</p>
           <ul className="space-y-1">
             {out.map((p) => (
               <li key={p.id} className="flex items-center justify-between text-sm bg-felt-950/40 rounded-lg px-3 py-2">
@@ -530,6 +600,9 @@ export function TournamentLive() {
         <div className="space-y-3">
           <Button variant="ghost" full onClick={() => { setRenaming(tournament.name); setShowAdmin(false); }}>
             ✏️ Rename
+          </Button>
+          <Button variant="ghost" full onClick={cloneTournament}>
+            📋 Clone for next time
           </Button>
           {tournament.state !== 'finished' && (
             <Button variant="ghost" full onClick={endTournament}>

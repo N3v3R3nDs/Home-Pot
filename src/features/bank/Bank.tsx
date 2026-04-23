@@ -9,6 +9,7 @@ import { bankAccountKey, recordBankTx, type BankBalance, type BankTransaction } 
 import { useSettings } from '@/store/settings';
 import { useAuth } from '@/store/auth';
 import { formatMoney } from '@/lib/format';
+import { useT } from '@/lib/i18n';
 import type { Profile } from '@/types/db';
 
 interface AccountRow extends BankBalance {
@@ -20,6 +21,7 @@ interface AccountRow extends BankBalance {
 export function Bank() {
   const { currency } = useSettings();
   const { user } = useAuth();
+  const t = useT();
   const [balances, setBalances] = useState<BankBalance[]>([]);
   const [profileMap, setProfileMap] = useState<Record<string, Profile>>({});
   const [recentTx, setRecentTx] = useState<BankTransaction[]>([]);
@@ -97,14 +99,14 @@ export function Bank() {
     <div className="space-y-4">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="font-display text-3xl text-brass-shine">🏦 The Bank</h1>
-          <p className="text-ink-400 text-sm mt-1">Chips left with the host between nights.</p>
+          <h1 className="font-display text-3xl text-brass-shine">{t('theBank')}</h1>
+          <p className="text-ink-400 text-sm mt-1">{t('bankSubtitle')}</p>
         </div>
         <Button variant="ghost" className="!px-3 !py-2 text-xs" onClick={() => setShowNew(true)}>＋ Tx</Button>
       </header>
 
       <Card className="text-center bg-felt-radial">
-        <div className="text-[10px] uppercase tracking-[0.3em] text-brass-300">Total in the bank</div>
+        <div className="text-[10px] uppercase tracking-[0.3em] text-brass-300">{t('totalInBank')}</div>
         <motion.div
           key={totalInBank}
           initial={{ scale: 0.95, opacity: 0 }}
@@ -113,13 +115,13 @@ export function Bank() {
         >
           {formatMoney(totalInBank, currency)}
         </motion.div>
-        <div className="text-xs text-ink-400 mt-1">across {accounts.length} account{accounts.length === 1 ? '' : 's'}</div>
+        <div className="text-xs text-ink-400 mt-1">{t(accounts.length === 1 ? 'acrossAccount' : 'acrossAccounts', { n: accounts.length })}</div>
       </Card>
 
       <Card>
-        <p className="label">Accounts</p>
+        <p className="label">{t('accounts')}</p>
         {accounts.length === 0 ? (
-          <p className="text-ink-400 text-sm">Nobody has chips in the bank yet.</p>
+          <p className="text-ink-400 text-sm">{t('noBankAccounts')}</p>
         ) : (
           <ul className="divide-y divide-felt-800">
             {accounts.map((a) => (
@@ -147,7 +149,7 @@ export function Bank() {
 
       {recentTx.length > 0 && (
         <Card>
-          <p className="label">Recent activity</p>
+          <p className="label">{t('recentActivity')}</p>
           <ul className="space-y-1 text-sm">
             {recentTx.map((t) => {
               const name = t.profile_id

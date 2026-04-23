@@ -11,5 +11,6 @@ COPY supabase/migrations/03-bank.sql    /docker-entrypoint-initdb.d/zz-03-bank.s
 COPY supabase/migrations/04-join-codes.sql /docker-entrypoint-initdb.d/zz-04-join-codes.sql
 COPY supabase/migrations/05-member-admin.sql /docker-entrypoint-initdb.d/zz-05-member-admin.sql
 COPY supabase/migrations/06-preserve-player-history.sql /docker-entrypoint-initdb.d/zz-06-preserve-player-history.sql
+COPY supabase/migrations/07-audit-and-soft-delete.sql /docker-entrypoint-initdb.d/zz-07-audit-and-soft-delete.sql
 
 RUN chmod +x /docker-entrypoint-initdb.d/zz-00-roles.sh

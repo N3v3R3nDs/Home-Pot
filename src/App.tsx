@@ -1,19 +1,33 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from '@/store/auth';
 import { useSettings } from '@/store/settings';
 import { setMuted } from '@/lib/sounds';
 import { Layout } from '@/components/Layout';
+import { ConfirmProvider } from '@/components/ui/Confirm';
+import { UndoProvider } from '@/components/ui/Undo';
 import { AuthScreen } from '@/features/auth/AuthScreen';
-import { Dashboard } from '@/features/dashboard/Dashboard';
-import { TournamentWizard } from '@/features/tournament/TournamentWizard';
-import { TournamentLive } from '@/features/tournament/TournamentLive';
-import { TournamentMonitor } from '@/features/tournament/TournamentMonitor';
-import { CashGameNew } from '@/features/cash/CashGameNew';
-import { CashGameLive } from '@/features/cash/CashGameLive';
-import { Bank } from '@/features/bank/Bank';
-import { History } from '@/features/history/History';
-import { Settings } from '@/features/settings/Settings';
+
+// Lazy-loaded routes — each becomes its own JS chunk so the initial bundle
+// only includes the auth screen + dashboard. Improves first-load over LTE.
+const Dashboard          = lazy(() => import('@/features/dashboard/Dashboard').then((m) => ({ default: m.Dashboard })));
+const TournamentWizard   = lazy(() => import('@/features/tournament/TournamentWizard').then((m) => ({ default: m.TournamentWizard })));
+const TournamentLive     = lazy(() => import('@/features/tournament/TournamentLive').then((m) => ({ default: m.TournamentLive })));
+const TournamentMonitor  = lazy(() => import('@/features/tournament/TournamentMonitor').then((m) => ({ default: m.TournamentMonitor })));
+const CashGameNew        = lazy(() => import('@/features/cash/CashGameNew').then((m) => ({ default: m.CashGameNew })));
+const CashGameLive       = lazy(() => import('@/features/cash/CashGameLive').then((m) => ({ default: m.CashGameLive })));
+const Bank               = lazy(() => import('@/features/bank/Bank').then((m) => ({ default: m.Bank })));
+const History            = lazy(() => import('@/features/history/History').then((m) => ({ default: m.History })));
+const PlayerProfile      = lazy(() => import('@/features/players/PlayerProfile').then((m) => ({ default: m.PlayerProfile })));
+const Settings           = lazy(() => import('@/features/settings/Settings').then((m) => ({ default: m.Settings })));
+
+function RouteFallback() {
+  return (
+    <div className="min-h-[40vh] grid place-items-center">
+      <div className="font-display text-2xl text-brass-shine animate-pulse">…</div>
+    </div>
+  );
+}
 
 export default function App() {
   const { session, loading, init } = useAuth();
@@ -38,20 +52,26 @@ export default function App() {
   if (!session) return <AuthScreen />;
 
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/tournament/new" element={<TournamentWizard />} />
-        <Route path="/tournament/:id" element={<TournamentLive />} />
-        <Route path="/cash/new" element={<CashGameNew />} />
-        <Route path="/cash/:id" element={<CashGameLive />} />
-        <Route path="/bank" element={<Bank />} />
-        <Route path="/history" element={<History />} />
-        <Route path="/settings" element={<Settings />} />
-      </Route>
-      {/* Monitor view rendered outside Layout (no nav) */}
-      <Route path="/tournament/:id/monitor" element={<TournamentMonitor />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <ConfirmProvider>
+      <UndoProvider>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/tournament/new" element={<TournamentWizard />} />
+              <Route path="/tournament/:id" element={<TournamentLive />} />
+              <Route path="/cash/new" element={<CashGameNew />} />
+              <Route path="/cash/:id" element={<CashGameLive />} />
+              <Route path="/bank" element={<Bank />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/player/:id" element={<PlayerProfile />} />
+              <Route path="/settings" element={<Settings />} />
+            </Route>
+            <Route path="/tournament/:id/monitor" element={<TournamentMonitor />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </UndoProvider>
+    </ConfirmProvider>
   );
 }

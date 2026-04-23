@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
+import { useConfirm } from '@/components/ui/Confirm';
 import { supabase } from '@/lib/supabase';
 import { useSettings } from '@/store/settings';
 import { formatMoney } from '@/lib/format';
@@ -32,6 +33,7 @@ export function CashGameLive() {
   const [leaveInBank, setLeaveInBank] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   useEffect(() => {
     if (!id) return;
@@ -172,7 +174,14 @@ export function CashGameLive() {
   const endCashGame = async () => {
     if (!game) return;
     const stillIn = players.filter((p) => p.cash_out === null);
-    if (stillIn.length > 0 && !confirm(`${stillIn.length} player${stillIn.length === 1 ? ' has' : 's have'} not cashed out. End anyway?`)) return;
+    if (stillIn.length > 0) {
+      const ok = await confirm({
+        title: 'End cash game?',
+        message: `${stillIn.length} player${stillIn.length === 1 ? ' has' : 's have'} not cashed out yet.`,
+        confirmLabel: '🏁 End anyway',
+      });
+      if (!ok) return;
+    }
     setGame({ ...game, state: 'finished', ended_at: new Date().toISOString() });
     setShowAdmin(false);
     navigate('/');
@@ -180,10 +189,16 @@ export function CashGameLive() {
   };
   const deleteCashGame = async () => {
     if (!game) return;
-    if (!confirm(`Delete "${game.name}" and all its players? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete "${game.name}"?`,
+      message: 'This removes the cash game and all player records. Bank transactions are preserved.',
+      confirmLabel: '🗑 Delete',
+      destructive: true,
+    });
+    if (!ok) return;
     setShowAdmin(false);
     navigate('/');
-    await supabase.from('cash_games').delete().eq('id', game.id);
+    await supabase.from('cash_games').update({ deleted_at: new Date().toISOString() }).eq('id', game.id);
   };
 
   const cashOut = async () => {

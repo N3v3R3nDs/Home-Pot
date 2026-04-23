@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
 import { supabase } from '@/lib/supabase';
 import { useSettings } from '@/store/settings';
@@ -33,8 +34,8 @@ export function History() {
   useEffect(() => {
     const load = async () => {
       const [{ data: tours }, { data: cgs }] = await Promise.all([
-        supabase.from('tournaments').select('*').eq('state', 'finished').order('created_at', { ascending: false }),
-        supabase.from('cash_games').select('*').eq('state', 'finished').order('created_at', { ascending: false }),
+        supabase.from('tournaments').select('*').is('deleted_at', null).eq('state', 'finished').order('created_at', { ascending: false }),
+        supabase.from('cash_games').select('*').is('deleted_at', null).eq('state', 'finished').order('created_at', { ascending: false }),
       ]);
       const ts = (tours ?? []) as Tournament[];
       const cs = (cgs ?? []) as CashGame[];
@@ -164,26 +165,40 @@ export function History() {
         ) : (
           <Card>
             <ul className="divide-y divide-felt-800">
-              {seasonRollup.map((m, i) => (
-                <li key={m.id} className="flex items-center justify-between py-3">
-                  <div className="flex items-center gap-3">
-                    <span className="font-display text-2xl text-brass-200 w-8 text-center">{i + 1}</span>
-                    <span className="text-xl">{m.avatar}</span>
-                    <div>
-                      <div className="font-semibold">{m.name}</div>
-                      <div className="text-xs text-ink-400">
-                        {m.tournamentWins > 0 && `🏆 ${m.tournamentWins} · `}
-                        {m.tournamentCashes > 0 && `💰 ${m.tournamentCashes} · `}
-                        {m.knockouts > 0 && `💀 ${m.knockouts} · `}
-                        {m.cashSessions > 0 && `🪑 ${m.cashSessions}`}
+              {seasonRollup.map((m, i) => {
+                const profileId = m.id.startsWith('p:') ? m.id.slice(2) : null;
+                const inner = (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <span className="font-display text-2xl text-brass-200 w-8 text-center">{i + 1}</span>
+                      <span className="text-xl">{m.avatar}</span>
+                      <div>
+                        <div className="font-semibold">{m.name}</div>
+                        <div className="text-xs text-ink-400">
+                          {m.tournamentWins > 0 && `🏆 ${m.tournamentWins} · `}
+                          {m.tournamentCashes > 0 && `💰 ${m.tournamentCashes} · `}
+                          {m.knockouts > 0 && `💀 ${m.knockouts} · `}
+                          {m.cashSessions > 0 && `🪑 ${m.cashSessions}`}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className={`font-mono ${m.netNok > 0 ? 'text-emerald-400' : m.netNok < 0 ? 'text-red-400' : 'text-ink-200'}`}>
-                    {m.netNok >= 0 ? '+' : ''}{formatMoney(m.netNok, currency)}
-                  </div>
-                </li>
-              ))}
+                    <div className={`font-mono ${m.netNok > 0 ? 'text-emerald-400' : m.netNok < 0 ? 'text-red-400' : 'text-ink-200'}`}>
+                      {m.netNok >= 0 ? '+' : ''}{formatMoney(m.netNok, currency)}
+                    </div>
+                  </>
+                );
+                return (
+                  <li key={m.id} className="flex">
+                    {profileId ? (
+                      <Link to={`/player/${profileId}`} className="flex items-center justify-between py-3 flex-1 hover:bg-felt-900/40 -mx-2 px-2 rounded-lg">
+                        {inner}
+                      </Link>
+                    ) : (
+                      <div className="flex items-center justify-between py-3 flex-1">{inner}</div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </Card>
         )

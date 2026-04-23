@@ -11,6 +11,7 @@ import { formatChips } from '@/lib/format';
 import { THEMES } from '@/lib/themes';
 import { LANGUAGES, useT } from '@/lib/i18n';
 import { supabase } from '@/lib/supabase';
+import { ensureNotificationPermission, notificationPermission } from '@/lib/notify';
 
 const EMOJIS = ['🃏', '🎩', '🍀', '🔥', '⚡', '👑', '🦈', '🐉', '🎯', '🚀', '💎', '🧠'];
 const CURRENCIES = ['NOK', 'USD', 'EUR', 'SEK', 'DKK', 'GBP'];
@@ -19,6 +20,7 @@ export function Settings() {
   const { profile, user, updateProfile, signOut } = useAuth();
   const { currency, setCurrency, inventory, setInventory, soundEnabled, toggleSound, theme, setTheme, language, setLanguage } = useSettings();
   const t = useT();
+  const [notifPerm, setNotifPerm] = useState(notificationPermission());
   const [name, setName] = useState(profile?.display_name ?? '');
   const [emoji, setEmoji] = useState(profile?.avatar_emoji ?? '🃏');
   const [invDraft, setInvDraft] = useState(inventory);
@@ -151,6 +153,29 @@ export function Settings() {
           >
             <span className={`absolute top-1 w-6 h-6 rounded-full bg-white transition ${soundEnabled ? 'left-7' : 'left-1'}`} />
           </button>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="label !mb-0">Background alerts</p>
+            <p className="text-xs text-ink-400">
+              {notifPerm === 'granted'
+                ? "On. We'll buzz when blinds go up while the app is in the background."
+                : notifPerm === 'denied'
+                ? 'Blocked by your browser. Re-enable in browser site settings.'
+                : notifPerm === 'unsupported'
+                ? "Your browser doesn't support notifications."
+                : 'Tap to enable notifications.'}
+            </p>
+          </div>
+          {notifPerm === 'default' && (
+            <Button variant="ghost" className="!px-3 !py-2 text-xs"
+                    onClick={async () => setNotifPerm(await ensureNotificationPermission())}>
+              Enable
+            </Button>
+          )}
         </div>
       </Card>
 
