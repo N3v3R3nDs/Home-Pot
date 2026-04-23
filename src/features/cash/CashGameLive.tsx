@@ -31,6 +31,7 @@ export function CashGameLive() {
   const [topUpFromBank, setTopUpFromBank] = useState(false);
   const [leaveInBank, setLeaveInBank] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
+  const [renaming, setRenaming] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -112,75 +113,99 @@ export function CashGameLive() {
 
   const addPlayer = async (profile_id?: string, guest?: string) => {
     if (!id || !game) return;
+    setGuestName(''); setAdding(false); setFromBank(false);
     const { data: p } = await supabase.from('cash_game_players').insert({
       cash_game_id: id,
       profile_id: profile_id ?? null,
       guest_name: guest ?? null,
     }).select().single();
-    if (p && defaultBuyIn > 0) {
-      await supabase.from('cash_buy_ins').insert({
-        cash_game_player_id: p.id, amount: defaultBuyIn,
-      });
-      if (fromBank) {
-        await recordBankTx({
-          profile_id, guest_name: guest, amount: -defaultBuyIn,
-          currency: game.currency, kind: 'cash_buy_in',
-          ref_table: 'cash_games', ref_id: id,
-          note: `Buy-in for ${game.name}`,
-        });
+    if (p) {
+      // Optimistic — add to local state so it appears instantly in the list
+      setPlayers((prev) => prev.some((x) => x.id === p.id) ? prev : [...prev, p as CashGamePlayer]);
+      if (defaultBuyIn > 0) {
+        const { data: bi } = await supabase.from('cash_buy_ins').insert({
+          cash_game_player_id: p.id, amount: defaultBuyIn,
+        }).select().single();
+        if (bi) setBuyIns((prev) => prev.some((x) => x.id === bi.id) ? prev : [...prev, bi as CashBuyIn]);
+        if (fromBank) {
+          await recordBankTx({
+            profile_id, guest_name: guest, amount: -defaultBuyIn,
+            currency: game.currency, kind: 'cash_buy_in',
+            ref_table: 'cash_games', ref_id: id,
+            note: `Buy-in for ${game.name}`,
+          });
+        }
       }
     }
-    setGuestName(''); setAdding(false); setFromBank(false);
   };
 
   const topUp = async () => {
     if (!topUpFor || !game) return;
-    await supabase.from('cash_buy_ins').insert({
-      cash_game_player_id: topUpFor.id, amount: topUpAmount,
-    });
-    if (topUpFromBank) {
+    const target = topUpFor;
+    const amount = topUpAmount;
+    const useBank = topUpFromBank;
+    setTopUpFor(null); setTopUpFromBank(false);
+
+    const { data: bi } = await supabase.from('cash_buy_ins').insert({
+      cash_game_player_id: target.id, amount,
+    }).select().single();
+    if (bi) setBuyIns((prev) => prev.some((x) => x.id === (bi as CashBuyIn).id) ? prev : [...prev, bi as CashBuyIn]);
+
+    if (useBank) {
       await recordBankTx({
-        profile_id: topUpFor.profile_id, guest_name: topUpFor.guest_name,
-        amount: -topUpAmount,
+        profile_id: target.profile_id, guest_name: target.guest_name,
+        amount: -amount,
         currency: game.currency, kind: 'cash_buy_in',
         ref_table: 'cash_games', ref_id: id,
         note: `Top-up for ${game.name}`,
       });
     }
-    setTopUpFor(null); setTopUpFromBank(false);
   };
 
+  const saveRename = async () => {
+    if (renaming === null || !renaming.trim() || !game) return;
+    const newName = renaming.trim();
+    setGame({ ...game, name: newName });
+    setRenaming(null);
+    await supabase.from('cash_games').update({ name: newName }).eq('id', game.id);
+  };
   const endCashGame = async () => {
     if (!game) return;
     const stillIn = players.filter((p) => p.cash_out === null);
     if (stillIn.length > 0 && !confirm(`${stillIn.length} player${stillIn.length === 1 ? ' has' : 's have'} not cashed out. End anyway?`)) return;
-    await supabase.from('cash_games').update({ state: 'finished', ended_at: new Date().toISOString() }).eq('id', game.id);
+    setGame({ ...game, state: 'finished', ended_at: new Date().toISOString() });
     setShowAdmin(false);
     navigate('/');
+    await supabase.from('cash_games').update({ state: 'finished', ended_at: new Date().toISOString() }).eq('id', game.id);
   };
   const deleteCashGame = async () => {
     if (!game) return;
     if (!confirm(`Delete "${game.name}" and all its players? This cannot be undone.`)) return;
-    await supabase.from('cash_games').delete().eq('id', game.id);
     setShowAdmin(false);
     navigate('/');
+    await supabase.from('cash_games').delete().eq('id', game.id);
   };
 
   const cashOut = async () => {
     if (!cashOutFor || !game) return;
-    await supabase.from('cash_game_players')
-      .update({ cash_out: cashOutAmount })
-      .eq('id', cashOutFor.id);
-    if (leaveInBank && cashOutAmount > 0) {
+    const target = cashOutFor;
+    const amount = cashOutAmount;
+    const useBank = leaveInBank;
+    setCashOutFor(null); setLeaveInBank(false);
+
+    setPlayers((prev) => prev.map((p) => p.id === target.id ? { ...p, cash_out: amount } : p));
+
+    await supabase.from('cash_game_players').update({ cash_out: amount }).eq('id', target.id);
+
+    if (useBank && amount > 0) {
       await recordBankTx({
-        profile_id: cashOutFor.profile_id, guest_name: cashOutFor.guest_name,
-        amount: cashOutAmount,
+        profile_id: target.profile_id, guest_name: target.guest_name,
+        amount,
         currency: game.currency, kind: 'cash_close',
         ref_table: 'cash_games', ref_id: id,
         note: `Left in bank from ${game.name}`,
       });
     }
-    setCashOutFor(null); setLeaveInBank(false);
   };
 
   if (!game) return <div>Loading…</div>;
@@ -268,6 +293,9 @@ export function CashGameLive() {
 
       <Sheet open={showAdmin} onClose={() => setShowAdmin(false)} title="Cash game">
         <div className="space-y-3">
+          <Button variant="ghost" full onClick={() => { setRenaming(game.name); setShowAdmin(false); }}>
+            ✏️ Rename
+          </Button>
           {game.state !== 'finished' && (
             <Button variant="ghost" full onClick={endCashGame}>
               🏁 End cash game now
@@ -281,6 +309,18 @@ export function CashGameLive() {
             Bank transactions are kept in the ledger for audit.
           </p>
         </div>
+      </Sheet>
+
+      <Sheet open={renaming !== null} onClose={() => setRenaming(null)} title="Rename cash game">
+        <Input
+          value={renaming ?? ''}
+          onChange={(e) => setRenaming(e.target.value)}
+          placeholder="Cash game name"
+          autoFocus
+        />
+        <Button full className="mt-4" onClick={saveRename} disabled={!renaming?.trim()}>
+          Save
+        </Button>
       </Sheet>
 
       <Sheet open={adding} onClose={() => { setAdding(false); setFromBank(false); }} title="Add player">

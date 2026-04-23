@@ -24,7 +24,7 @@ export function TournamentLive() {
   const navigate = useNavigate();
   const { user, profile, refreshProfile } = useAuth();
   const { currency, soundEnabled } = useSettings();
-  const { tournament, players, loading } = useTournament(id);
+  const { tournament, players, loading, patchTournament, patchPlayer } = useTournament(id);
   const clock = useTournamentClock(tournament);
 
   const [profileMap, setProfileMap] = useState<Record<string, Profile>>({});
@@ -34,6 +34,7 @@ export function TournamentLive() {
   const [chipUpFromBank, setChipUpFromBank] = useState(false);
   const [claimName, setClaimName] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const autoClaimedRef = useRef(false);
 
   // Lookup display names for joined profiles
@@ -102,9 +103,9 @@ export function TournamentLive() {
   if (loading) return <div className="text-ink-300">Loading tournament…</div>;
   if (!tournament) return <div className="text-ink-300">Tournament not found.</div>;
 
-  // ---------- Host actions -------------------------------------------------
+  // ---------- Actions: optimistic first, DB second ------------------------
   const startOrResume = async () => {
-    const updates: Record<string, unknown> = { state: 'running' };
+    const updates: Partial<typeof tournament> = { state: 'running' };
     if (tournament.state === 'setup') {
       updates.level_started_at = new Date().toISOString();
       updates.current_level = 0;
@@ -114,28 +115,39 @@ export function TournamentLive() {
       updates.pause_elapsed_ms = tournament.pause_elapsed_ms + addedPause;
       updates.paused_at = null;
     }
+    patchTournament(updates);  // instant UI
     await supabase.from('tournaments').update(updates).eq('id', tournament.id);
   };
   const pause = async () => {
-    await supabase.from('tournaments').update({
-      state: 'paused', paused_at: new Date().toISOString(),
-    }).eq('id', tournament.id);
+    const pausedAt = new Date().toISOString();
+    patchTournament({ state: 'paused', paused_at: pausedAt });
+    await supabase.from('tournaments').update({ state: 'paused', paused_at: pausedAt }).eq('id', tournament.id);
   };
   const advanceLevel = async (by: number) => {
     const next = Math.max(0, Math.min(tournament.blind_structure.length - 1, tournament.current_level + by));
-    await supabase.from('tournaments').update({
+    const updates = {
       current_level: next,
       level_started_at: new Date().toISOString(),
       pause_elapsed_ms: 0,
       paused_at: tournament.state === 'paused' ? null : tournament.paused_at,
-      state: tournament.state === 'setup' ? 'running' : tournament.state,
-    }).eq('id', tournament.id);
+      state: tournament.state === 'setup' ? 'running' as const : tournament.state,
+    };
+    patchTournament(updates);
+    await supabase.from('tournaments').update(updates).eq('id', tournament.id);
+  };
+  const saveRename = async () => {
+    if (renaming === null || !renaming.trim()) return;
+    const newName = renaming.trim();
+    patchTournament({ name: newName });
+    setRenaming(null);
+    await supabase.from('tournaments').update({ name: newName }).eq('id', tournament.id);
   };
   const endTournament = async () => {
     if (!confirm('End this tournament now? It moves to History.')) return;
-    await supabase.from('tournaments').update({ state: 'finished' }).eq('id', tournament.id);
+    patchTournament({ state: 'finished' });
     setShowAdmin(false);
     navigate('/');
+    await supabase.from('tournaments').update({ state: 'finished' }).eq('id', tournament.id);
   };
   const deleteTournament = async () => {
     if (!confirm(`Delete "${tournament.name}" and all its players? This cannot be undone.`)) return;
@@ -149,9 +161,10 @@ export function TournamentLive() {
     const amount = kind === 'rebuy'
       ? Number(tournament.rebuy_amount ?? tournament.buy_in)
       : Number(tournament.addon_amount ?? tournament.buy_in);
-    await supabase.from('tournament_players')
-      .update(kind === 'rebuy' ? { rebuys: p.rebuys + 1 } : { addons: p.addons + 1 })
-      .eq('id', p.id);
+    const patch = kind === 'rebuy' ? { rebuys: p.rebuys + 1 } : { addons: p.addons + 1 };
+    patchPlayer(p.id, patch);
+    setChipUp(null);
+    await supabase.from('tournament_players').update(patch).eq('id', p.id);
     if (chipUpFromBank && amount > 0) {
       await recordBankTx({
         profile_id: p.profile_id, guest_name: p.guest_name,
@@ -162,37 +175,45 @@ export function TournamentLive() {
         note: `${kind === 'rebuy' ? 'Re-buy' : 'Add-on'} for ${tournament.name}`,
       });
     }
-    setChipUp(null); setChipUpFromBank(false);
+    setChipUpFromBank(false);
   };
   const eliminate = async (target: TournamentPlayer, killerId?: string) => {
     const place = alive.length;
     const payout = payouts.find((p) => p.place === place)?.percent ?? 0;
-    await supabase.from('tournament_players').update({
+    const targetPatch = {
       eliminated_at: new Date().toISOString(),
       eliminated_by: killerId ?? null,
       finishing_position: place,
       prize: payout,
-    }).eq('id', target.id);
+    };
+    patchPlayer(target.id, targetPatch);
+    if (soundEnabled) eliminationSound();
+    setEliminating(null);
+
+    await supabase.from('tournament_players').update(targetPatch).eq('id', target.id);
+
     if (killerId && tournament.bounty_amount > 0) {
       const killer = players.find((p) => p.id === killerId);
       if (killer) {
+        patchPlayer(killer.id, { bounties_won: killer.bounties_won + 1 });
         await supabase.from('tournament_players')
           .update({ bounties_won: killer.bounties_won + 1 })
           .eq('id', killer.id);
       }
     }
-    if (soundEnabled) eliminationSound();
-    setEliminating(null);
     if (alive.length === 2) {
       // Last one standing is also "eliminated" (1st place) so we record their prize
       const remaining = alive.find((p) => p.id !== target.id);
       if (remaining) {
         const winnerPrize = payouts.find((p) => p.place === 1)?.percent ?? 0;
-        await supabase.from('tournament_players').update({
+        const winnerPatch = {
           eliminated_at: new Date().toISOString(),
           finishing_position: 1,
           prize: winnerPrize,
-        }).eq('id', remaining.id);
+        };
+        patchPlayer(remaining.id, winnerPatch);
+        patchTournament({ state: 'finished' });
+        await supabase.from('tournament_players').update(winnerPatch).eq('id', remaining.id);
         await supabase.from('tournaments').update({ state: 'finished' }).eq('id', tournament.id);
       }
     }
@@ -392,11 +413,11 @@ export function TournamentLive() {
         const userHasRealName = !!profile?.display_name && profile.display_name !== 'Guest';
         const claimSeat = async (p: TournamentPlayer) => {
           if (!user) return;
+          // Optimistic — flip the seat owner instantly so the sheet closes.
+          patchPlayer(p.id, { profile_id: user.id, guest_name: null });
           await supabase.from('tournament_players')
             .update({ profile_id: user.id, guest_name: null })
             .eq('id', p.id);
-          // Only overwrite the user's display name if they don't have a real one.
-          // Returning friends keep their stored name across nights.
           if (!userHasRealName) {
             const newName = seatName(p);
             if (newName && newName !== 'Open seat') {
@@ -507,6 +528,9 @@ export function TournamentLive() {
       {/* Admin / lifecycle */}
       <Sheet open={showAdmin} onClose={() => setShowAdmin(false)} title="Tournament">
         <div className="space-y-3">
+          <Button variant="ghost" full onClick={() => { setRenaming(tournament.name); setShowAdmin(false); }}>
+            ✏️ Rename
+          </Button>
           {tournament.state !== 'finished' && (
             <Button variant="ghost" full onClick={endTournament}>
               🏁 End tournament now
@@ -520,6 +544,18 @@ export function TournamentLive() {
             Bank transactions tied to this tournament are kept in the ledger for audit.
           </p>
         </div>
+      </Sheet>
+
+      <Sheet open={renaming !== null} onClose={() => setRenaming(null)} title="Rename tournament">
+        <Input
+          value={renaming ?? ''}
+          onChange={(e) => setRenaming(e.target.value)}
+          placeholder="Tournament name"
+          autoFocus
+        />
+        <Button full className="mt-4" onClick={saveRename} disabled={!renaming?.trim()}>
+          Save
+        </Button>
       </Sheet>
 
       {/* Re-buy / Add-on confirmation with bank option */}

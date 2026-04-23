@@ -46,5 +46,20 @@ export function useTournament(tournamentId: string | undefined) {
     return () => { cancelled = true; supabase.removeChannel(channel); };
   }, [tournamentId]);
 
-  return { tournament, players, loading };
+  // Optimistic helpers — apply a partial patch locally so UI updates instantly.
+  // The realtime echo a few hundred ms later is then idempotent.
+  const patchTournament = (patch: Partial<Tournament>) => {
+    setTournament((prev) => prev ? { ...prev, ...patch } : prev);
+  };
+  const patchPlayer = (id: string, patch: Partial<TournamentPlayer>) => {
+    setPlayers((prev) => prev.map((p) => p.id === id ? { ...p, ...patch } : p));
+  };
+  const removePlayer = (id: string) => {
+    setPlayers((prev) => prev.filter((p) => p.id !== id));
+  };
+  const addPlayer = (player: TournamentPlayer) => {
+    setPlayers((prev) => prev.some((p) => p.id === player.id) ? prev : [...prev, player]);
+  };
+
+  return { tournament, players, loading, patchTournament, patchPlayer, removePlayer, addPlayer };
 }

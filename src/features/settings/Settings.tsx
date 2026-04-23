@@ -9,6 +9,7 @@ import { useSettings } from '@/store/settings';
 import { DEFAULT_INVENTORY, DENOMINATIONS, totalChipValue, type Denomination } from '@/lib/chipSet';
 import { formatChips } from '@/lib/format';
 import { THEMES } from '@/lib/themes';
+import { LANGUAGES, useT } from '@/lib/i18n';
 import { supabase } from '@/lib/supabase';
 
 const EMOJIS = ['🃏', '🎩', '🍀', '🔥', '⚡', '👑', '🦈', '🐉', '🎯', '🚀', '💎', '🧠'];
@@ -16,7 +17,8 @@ const CURRENCIES = ['NOK', 'USD', 'EUR', 'SEK', 'DKK', 'GBP'];
 
 export function Settings() {
   const { profile, user, updateProfile, signOut } = useAuth();
-  const { currency, setCurrency, inventory, setInventory, soundEnabled, toggleSound, theme, setTheme } = useSettings();
+  const { currency, setCurrency, inventory, setInventory, soundEnabled, toggleSound, theme, setTheme, language, setLanguage } = useSettings();
+  const t = useT();
   const [name, setName] = useState(profile?.display_name ?? '');
   const [emoji, setEmoji] = useState(profile?.avatar_emoji ?? '🃏');
   const [invDraft, setInvDraft] = useState(inventory);
@@ -29,9 +31,16 @@ export function Settings() {
   const [resetMsg, setResetMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.from('members').select('*').order('display_name').then(({ data }) => {
+    const load = async () => {
+      const { data } = await supabase.from('members').select('*').order('display_name');
       setMembers((data ?? []) as Member[]);
-    });
+    };
+    load();
+    // Refresh whenever a new profile is created or one is deleted/updated.
+    const ch = supabase.channel('members')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
   }, []);
 
   const submitReset = async () => {
@@ -54,10 +63,25 @@ export function Settings() {
 
   return (
     <div className="space-y-4">
-      <h1 className="font-display text-3xl text-brass-shine">Settings</h1>
+      <h1 className="font-display text-3xl text-brass-shine">{t('settings')}</h1>
 
       <Card>
-        <p className="label">Profile</p>
+        <p className="label">{t('language')}</p>
+        <div className="grid grid-cols-2 gap-2">
+          {LANGUAGES.map((l) => (
+            <button
+              key={l.id}
+              onClick={() => setLanguage(l.id)}
+              className={`py-3 rounded-xl text-sm font-semibold border ${
+                language === l.id ? 'bg-brass-500/15 border-brass-500/50 text-brass-100' : 'bg-felt-900/60 border-felt-700 text-ink-200'
+              }`}
+            >{l.native}</button>
+          ))}
+        </div>
+      </Card>
+
+      <Card>
+        <p className="label">{t('profile')}</p>
         <Input label="Display name" value={name} onChange={(e) => setName(e.target.value)} />
         <div className="mt-3">
           <p className="label">Avatar</p>

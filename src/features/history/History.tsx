@@ -36,12 +36,12 @@ export function History() {
         supabase.from('tournaments').select('*').eq('state', 'finished').order('created_at', { ascending: false }),
         supabase.from('cash_games').select('*').eq('state', 'finished').order('created_at', { ascending: false }),
       ]);
-      const t = (tours ?? []) as Tournament[];
-      const c = (cgs ?? []) as CashGame[];
-      setTournaments(t); setCashGames(c);
+      const ts = (tours ?? []) as Tournament[];
+      const cs = (cgs ?? []) as CashGame[];
+      setTournaments(ts); setCashGames(cs);
 
-      const tIds = t.map((x) => x.id);
-      const cIds = c.map((x) => x.id);
+      const tIds = ts.map((x) => x.id);
+      const cIds = cs.map((x) => x.id);
       const [{ data: tp }, { data: cp }] = await Promise.all([
         tIds.length ? supabase.from('tournament_players').select('*').in('tournament_id', tIds) : Promise.resolve({ data: [] }),
         cIds.length ? supabase.from('cash_game_players').select('*').in('cash_game_id', cIds) : Promise.resolve({ data: [] }),
@@ -64,6 +64,19 @@ export function History() {
       }
     };
     load();
+
+    // Realtime: any state change on tournaments/cash games or any update to
+    // their players/buy-ins triggers a fresh load. Cheap and correct — the
+    // history page is rarely open and full reloads are well under a second.
+    const ch = supabase.channel('history')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournaments' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_players' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_games' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_game_players' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_buy_ins' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
   }, []);
 
   const memberKey = (p: { profile_id?: string | null; guest_name?: string | null }) =>

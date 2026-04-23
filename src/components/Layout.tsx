@@ -2,18 +2,19 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/cn';
 import { useAuth } from '@/store/auth';
-
-const NAV = [
-  { to: '/', label: 'Home', icon: '🏠' },
-  { to: '/bank', label: 'Bank', icon: '🏦' },
-  { to: '/history', label: 'Stats', icon: '📈' },
-  { to: '/settings', label: 'Settings', icon: '⚙️' },
-] as const;
+import { useT } from '@/lib/i18n';
 
 export function Layout() {
   const { profile } = useAuth();
   const location = useLocation();
   const hideNav = location.pathname.includes('/monitor');
+  const t = useT();
+  const NAV = [
+    { to: '/', label: t('navHome'), icon: '🏠' },
+    { to: '/bank', label: t('navBank'), icon: '🏦' },
+    { to: '/history', label: t('navStats'), icon: '📈' },
+    { to: '/settings', label: t('navSettings'), icon: '⚙️' },
+  ] as const;
 
   return (
     <div className="min-h-full flex flex-col">

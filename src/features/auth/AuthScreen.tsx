@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { resolveJoinCode } from '@/lib/joinCode';
+import { useT } from '@/lib/i18n';
 
 type Mode = 'quick' | 'sign-in';
 
@@ -28,6 +29,7 @@ function pinToPassword(pin: string): string {
 
 export function AuthScreen() {
   const navigate = useNavigate();
+  const t = useT();
   const [mode, setMode] = useState<Mode>('quick');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -143,7 +145,7 @@ export function AuthScreen() {
             HP
           </motion.div>
           <h1 className="font-display text-5xl text-brass-shine tracking-wider">HOME POT</h1>
-          <p className="text-ink-300 mt-2 text-sm">Pro poker night, in your pocket.</p>
+          <p className="text-ink-300 mt-2 text-sm">{t('appTagline')}</p>
         </div>
 
         <form onSubmit={submit} className="card-felt p-6 space-y-4">
@@ -157,7 +159,7 @@ export function AuthScreen() {
                   mode === m ? 'bg-brass-500/20 text-brass-200 border border-brass-500/40' : 'text-ink-400 border border-transparent'
                 }`}
               >
-                {m === 'quick' ? '⚡ Quick join' : 'Host sign in'}
+                {m === 'quick' ? `⚡ ${t('quickJoin')}` : t('hostSignIn')}
               </button>
             ))}
           </div>
@@ -166,22 +168,21 @@ export function AuthScreen() {
             <>
               {returning ? (
                 <div className="bg-brass-500/10 border border-brass-500/30 rounded-xl px-3 py-2 text-center text-sm text-brass-200">
-                  Welcome back, <b>{returning}</b> 👋
+                  {t('welcomeBack', { name: returning })}
                 </div>
               ) : (
                 <div className="bg-felt-800/60 border border-felt-700 rounded-xl px-3 py-3 text-center text-xs text-ink-200 leading-relaxed">
-                  <div className="font-semibold text-brass-200 mb-1">First time here?</div>
-                  Pick any name and a <b>4-digit PIN you'll remember</b>.
-                  Next time you open the app — on any phone — same name + PIN signs you straight in.
+                  <div className="font-semibold text-brass-200 mb-1">{t('firstTimeHere')}</div>
+                  {t('firstTimeIntro')}
                 </div>
               )}
 
               <div>
-                <label className="label">Your name</label>
+                <label className="label">{t('yourName')}</label>
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Lars"
+                  placeholder="Lars"
                   autoComplete="given-name"
                   className="input text-center text-lg"
                   required
@@ -190,7 +191,7 @@ export function AuthScreen() {
 
               <div>
                 <label className="label">
-                  {returning ? 'Your PIN' : 'Choose a 4-digit PIN'}
+                  {returning ? t('yourPin') : t('choosePin')}
                 </label>
                 <input
                   value={pin}
@@ -205,14 +206,14 @@ export function AuthScreen() {
                 />
                 {!returning && (
                   <p className="text-center text-[11px] text-ink-500 mt-2">
-                    Make it up — don't share it. Forgot it later? Ask the host to reset it.
+                    {t('pinHelpFirstTime')}
                   </p>
                 )}
               </div>
 
               <div>
                 <label className="label">
-                  Join code <span className="text-ink-500 normal-case font-normal">(optional)</span>
+                  {t('joinCode')} <span className="text-ink-500 normal-case font-normal">({t('optional')})</span>
                 </label>
                 <input
                   value={code}
@@ -226,7 +227,7 @@ export function AuthScreen() {
                   className="w-full text-center font-display text-5xl tracking-[0.5em] uppercase bg-felt-900/80 border-2 border-felt-700/60 rounded-2xl py-4 text-brass-shine focus:outline-none focus:border-brass-400/60"
                 />
                 <p className="text-center text-[11px] text-ink-500 mt-2">
-                  Tonight's game has a code. Skip to just check your stats.
+                  {t('joinCodeHint')}
                 </p>
               </div>
             </>
@@ -235,7 +236,7 @@ export function AuthScreen() {
           {mode === 'sign-in' && (
             <>
               <Input
-                label="Email"
+                label={t('email')}
                 type="email"
                 autoComplete="email"
                 value={email}
@@ -243,7 +244,7 @@ export function AuthScreen() {
                 required
               />
               <Input
-                label="Password"
+                label={t('password')}
                 type="password"
                 autoComplete="current-password"
                 value={password}
@@ -252,7 +253,7 @@ export function AuthScreen() {
                 minLength={6}
               />
               <p className="text-center text-[11px] text-ink-500">
-                For hosts/admins only. Friends should use ⚡ Quick join.
+                {t('hostsOnlyHint')}
               </p>
             </>
           )}
@@ -261,17 +262,17 @@ export function AuthScreen() {
           {info && <p className="text-brass-300 text-sm">{info}</p>}
 
           <Button type="submit" full disabled={busy}>
-            {busy ? 'Working…' :
+            {busy ? t('workingDots') :
               mode === 'quick'
                 ? (returning
-                    ? (code ? `Join ${code}` : 'Sign in')
-                    : (code ? `Create account & join ${code}` : 'Create my account'))
-                : 'Deal me in'}
+                    ? (code ? t('joinX', { code }) : t('signInLabel'))
+                    : (code ? t('createAccountAndJoin', { code }) : t('createMyAccount')))
+                : t('dealMeIn')}
           </Button>
         </form>
 
         <p className="text-center text-xs text-ink-500 mt-6">
-          Self-hosted • Your data stays on your network
+          {t('appFooter')}
         </p>
       </motion.div>
     </div>
