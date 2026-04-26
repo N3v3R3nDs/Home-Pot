@@ -102,6 +102,10 @@ export function TournamentWizard() {
   // players
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
   const [picked, setPicked] = useState<PlayerPick[]>([]);
+  // "I'm hosting only, not playing" — when true, the wizard skips auto-adding
+  // the host to the roster, and TournamentLive skips the seat-claim sheet.
+  // Persisted as a localStorage flag keyed by tournament id after create.
+  const [hostingOnly, setHostingOnly] = useState(false);
   const [guestDraft, setGuestDraft] = useState('');
   const [profilesLoaded, setProfilesLoaded] = useState(false);
   const [recentGuests, setRecentGuests] = useState<RecentGuest[]>([]);
@@ -141,7 +145,7 @@ export function TournamentWizard() {
     if (profs) setAllProfiles(profs as Profile[]);
     setRecentGuests(recents);
     setProfilesLoaded(true);
-    if (user && !picked.find((p) => p.profileId === user.id)) {
+    if (user && !hostingOnly && !picked.find((p) => p.profileId === user.id)) {
       setPicked((prev) => [{ profileId: user.id }, ...prev]);
     }
   };
@@ -213,6 +217,13 @@ export function TournamentWizard() {
           guest_name: p.guestName ?? null,
         })),
       );
+    }
+    // Persist the host's "hosting only" preference for this tournament so
+    // the live screen knows not to push the seat-claim sheet at them.
+    if (hostingOnly && user) {
+      try {
+        localStorage.setItem(`home-pot:hosting-only:${t.id}:${user.id}`, '1');
+      } catch { /* localStorage disabled in private mode — degrade gracefully */ }
     }
     navigate(`/tournament/${t.id}`);
   };
@@ -308,6 +319,34 @@ export function TournamentWizard() {
             <NumberInput label={t('dealerTipPercent')} value={dealerTipPercent} suffix="%" min={0} max={100} decimals
               onValueChange={setDealerTipPercent} hint={t('dealerTipHint')} />
           </div>
+          {/* Hosting-only toggle: the host runs the controls but isn't seated.
+              When ON, we (a) skip auto-adding them to the roster and (b) write
+              a localStorage flag so the live screen doesn't push the take-your-
+              seat sheet at them on every refresh. */}
+          <button
+            type="button"
+            onClick={() => {
+              const next = !hostingOnly;
+              setHostingOnly(next);
+              if (next && user) setPicked((prev) => prev.filter((p) => p.profileId !== user.id));
+            }}
+            className={`w-full flex items-center justify-between rounded-xl border px-4 py-3 transition ${
+              hostingOnly
+                ? 'bg-brass-500/15 border-brass-500/50 text-brass-100'
+                : 'bg-felt-900/60 border-felt-700 text-ink-200'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <span className="text-base">{hostingOnly ? '🎩' : '🎟️'}</span>
+              <span className="text-left">
+                <div className="font-semibold text-sm">Hosting only — not playing</div>
+                <div className="text-[11px] text-ink-400">{hostingOnly ? "You won't be added to the roster." : "Off — you'll be added to the player list."}</div>
+              </span>
+            </span>
+            <span className={`w-11 h-6 rounded-full relative shrink-0 transition ${hostingOnly ? 'bg-brass-500' : 'bg-felt-700'}`}>
+              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${hostingOnly ? 'left-[1.4rem]' : 'left-0.5'}`} />
+            </span>
+          </button>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={saveAsTemplate}>{t('saveAsTemplate')}</Button>
             <Button full onClick={() => { setStep('players'); loadProfiles(); }}>

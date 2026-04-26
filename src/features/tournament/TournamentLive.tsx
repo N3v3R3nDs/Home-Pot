@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/Input';
 import { NumberInput } from '@/components/ui/NumberInput';
 import { Sheet } from '@/components/ui/Sheet';
 import { useConfirm } from '@/components/ui/Confirm';
+import { useToast } from '@/components/ui/Toast';
 import { useUndo } from '@/components/ui/Undo';
 import { QRCode } from '@/components/QRCode';
 import { supabase } from '@/lib/supabase';
@@ -36,8 +37,9 @@ export function TournamentLive() {
   const navigate = useNavigate();
   const { user, profile, refreshProfile } = useAuth();
   const { currency, soundEnabled } = useSettings();
-  const { tournament, players, loading, patchTournament, patchPlayer } = useTournament(id);
+  const { tournament, players, loading, patchTournament, patchPlayer, addPlayer } = useTournament(id);
   const confirm = useConfirm();
+  const toast = useToast();
   const undo = useUndo();
   const t = useT();
   const clock = useTournamentClock(tournament);
@@ -727,7 +729,14 @@ export function TournamentLive() {
           shows a sheet to tap their name. */}
       {(() => {
         const userSeated = !!user && players.some((p) => p.profile_id === user.id);
-        const showSeat = !!user && !userSeated && tournament.state !== 'finished';
+        // Hosts who chose "hosting only, not playing" in the wizard get the
+        // sheet suppressed so they're not nagged to take a seat every refresh.
+        const hostingOnlyKey = user ? `home-pot:hosting-only:${tournament.id}:${user.id}` : null;
+        const isHostingOnly = (() => {
+          if (!hostingOnlyKey) return false;
+          try { return localStorage.getItem(hostingOnlyKey) === '1'; } catch { return false; }
+        })();
+        const showSeat = !!user && !userSeated && !isHostingOnly && tournament.state !== 'finished';
         // Anyone except the host can be replaced — the host owns the night.
         const claimable = players.filter((p) => p.profile_id !== tournament.host_id);
         const seatName = (p: TournamentPlayer) =>
@@ -739,9 +748,17 @@ export function TournamentLive() {
           if (!user) return;
           // Optimistic — flip the seat owner instantly so the sheet closes.
           patchPlayer(p.id, { profile_id: user.id, guest_name: null });
-          await supabase.from('tournament_players')
+          const { error } = await supabase.from('tournament_players')
             .update({ profile_id: user.id, guest_name: null })
             .eq('id', p.id);
+          if (error) {
+            // eslint-disable-next-line no-console
+            console.error('[TournamentLive] claimSeat failed:', error);
+            toast(error.message ?? 'Could not claim seat', 'error');
+            // Roll back the optimistic patch — restore previous owner.
+            patchPlayer(p.id, { profile_id: p.profile_id, guest_name: p.guest_name });
+            return;
+          }
           if (!userHasRealName) {
             const newName = seatName(p);
             if (newName && newName !== 'Open seat') {
@@ -765,20 +782,48 @@ export function TournamentLive() {
           }
         }
         const addNew = async () => {
-          if (!user || !claimName.trim()) return;
+          if (!user) {
+            toast('Please sign in first', 'error');
+            return;
+          }
+          const trimmed = claimName.trim();
+          if (!trimmed) return;
           // If the tournament has already started, mark as late registration
           // so stats can distinguish them from full-stack starters.
           const isLate = tournament.state !== 'setup' && clock.levelIndex > 0;
-          await supabase.from('tournament_players').insert({
-            tournament_id: tournament.id,
-            profile_id: user.id,
-            late_reg: isLate,
-            entry_level: isLate ? clock.levelIndex + 1 : null,
-          });
-          await supabase.from('profiles')
-            .update({ display_name: claimName.trim() })
+          // Insert + return the row so we can patch local state immediately
+          // (closes the sheet without waiting for the realtime echo).
+          const { data: inserted, error: insertError } = await supabase
+            .from('tournament_players')
+            .insert({
+              tournament_id: tournament.id,
+              profile_id: user.id,
+              late_reg: isLate,
+              entry_level: isLate ? clock.levelIndex + 1 : null,
+            })
+            .select()
+            .single();
+          if (insertError || !inserted) {
+            // eslint-disable-next-line no-console
+            console.error('[TournamentLive] addNew insert failed:', insertError);
+            toast(insertError?.message ?? 'Could not add player', 'error');
+            return;
+          }
+          // Optimistic — close the sheet on this render by adding the row to
+          // local state so `userSeated` becomes true immediately.
+          addPlayer(inserted as TournamentPlayer);
+
+          const { error: profileError } = await supabase.from('profiles')
+            .update({ display_name: trimmed })
             .eq('id', user.id);
-          await refreshProfile();
+          if (profileError) {
+            // eslint-disable-next-line no-console
+            console.error('[TournamentLive] addNew profile update failed:', profileError);
+            toast(`Seated, but couldn't save name: ${profileError.message}`, 'error');
+          } else {
+            await refreshProfile();
+            toast(`You're in — good luck, ${trimmed} 🃏`, 'success');
+          }
           setClaimName('');
         };
         return (
@@ -892,6 +937,36 @@ export function TournamentLive() {
           )}
           {/* Auto-advance is now a prominent toggle right under the timer
               card on the live screen — no longer duplicated in this sheet. */}
+          {/* Let the host change their mind about playing. If they were
+              hosting-only and now want a seat, clearing the flag re-enables
+              the take-your-seat sheet on the next render. */}
+          {user && tournament.state !== 'finished' && (() => {
+            const key = `home-pot:hosting-only:${tournament.id}:${user.id}`;
+            const flagOn = (() => { try { return localStorage.getItem(key) === '1'; } catch { return false; } })();
+            const userIsSeated = players.some((p) => p.profile_id === user.id);
+            if (!flagOn && !userIsSeated) return null; // currently in normal state, nothing to offer
+            return (
+              <Button
+                variant="ghost"
+                full
+                onClick={() => {
+                  setShowAdmin(false);
+                  if (flagOn) {
+                    try { localStorage.removeItem(key); } catch { /* noop */ }
+                    toast("You can take a seat now — refresh to see the prompt.", 'success');
+                  } else if (userIsSeated) {
+                    // Mark hosting-only going forward; existing seat row stays
+                    // (don't silently delete play data). Host can use Edit ⋯
+                    // → Remove on the eliminated row to fully drop themselves.
+                    try { localStorage.setItem(key, '1'); } catch { /* noop */ }
+                    toast('Hosting-only mode on — your existing seat is preserved.', 'success');
+                  }
+                }}
+              >
+                {flagOn ? '🎟️ Switch to playing this one' : '🎩 Switch to hosting only (not playing)'}
+              </Button>
+            );
+          })()}
           <Button variant="ghost" full onClick={cloneTournament}>
             {t('cloneForNextTime')}
           </Button>
