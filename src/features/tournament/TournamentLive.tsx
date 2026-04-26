@@ -54,16 +54,24 @@ export function TournamentLive() {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [editingPlayer, setEditingPlayer] = useState<TournamentPlayer | null>(null);
   const [editPosDraft, setEditPosDraft] = useState<number>(0);
+  const [editPrizeDraft, setEditPrizeDraft] = useState<number>(0);
+  const [prizeManuallyEdited, setPrizeManuallyEdited] = useState(false);
   const autoClaimedRef = useRef(false);
 
   const openEditPlayer = (p: TournamentPlayer) => {
     setEditPosDraft(p.finishing_position ?? 0);
+    setEditPrizeDraft(Number(p.prize ?? 0));
+    setPrizeManuallyEdited(false);
     setEditingPlayer(p);
   };
   const saveEditPlayer = async () => {
     if (!editingPlayer) return;
     const newPos = Math.max(1, editPosDraft);
-    const newPrize = payouts.find((x) => x.place === newPos)?.percent ?? 0;
+    // If the user manually typed a prize, respect it. Otherwise auto-derive
+    // from the payout structure for the new finishing position.
+    const newPrize = prizeManuallyEdited
+      ? Math.max(0, Number(editPrizeDraft) || 0)
+      : (payouts.find((x) => x.place === newPos)?.percent ?? 0);
     const patch = {
       finishing_position: newPos,
       prize: newPrize,
@@ -608,26 +616,70 @@ export function TournamentLive() {
               <label className="label">Finishing position</label>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setEditPosDraft((v) => Math.max(1, v - 1))}
+                  onClick={() => {
+                    setEditPosDraft((v) => Math.max(1, v - 1));
+                    if (!prizeManuallyEdited) {
+                      const next = Math.max(1, editPosDraft - 1);
+                      setEditPrizeDraft(payouts.find((x) => x.place === next)?.percent ?? 0);
+                    }
+                  }}
                   className="w-12 h-12 rounded-xl bg-felt-800 text-2xl"
                 >−</button>
                 <input
                   type="number"
                   value={editPosDraft}
                   min={1}
-                  onChange={(e) => setEditPosDraft(Math.max(1, Number(e.target.value)))}
+                  onChange={(e) => {
+                    const n = Math.max(1, Number(e.target.value));
+                    setEditPosDraft(n);
+                    if (!prizeManuallyEdited) {
+                      setEditPrizeDraft(payouts.find((x) => x.place === n)?.percent ?? 0);
+                    }
+                  }}
                   className="input text-center font-mono text-2xl flex-1"
                 />
                 <button
-                  onClick={() => setEditPosDraft((v) => v + 1)}
+                  onClick={() => {
+                    setEditPosDraft((v) => v + 1);
+                    if (!prizeManuallyEdited) {
+                      const next = editPosDraft + 1;
+                      setEditPrizeDraft(payouts.find((x) => x.place === next)?.percent ?? 0);
+                    }
+                  }}
                   className="w-12 h-12 rounded-xl bg-felt-800 text-2xl"
                 >+</button>
               </div>
-              <p className="text-[11px] text-ink-400 mt-2 text-center">
-                Prize will auto-update to {formatMoney(payouts.find((x) => x.place === editPosDraft)?.percent ?? 0, currency)}
+            </div>
+            <div>
+              <label className="label flex items-center justify-between">
+                <span>Prize</span>
+                {prizeManuallyEdited && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPrizeManuallyEdited(false);
+                      setEditPrizeDraft(payouts.find((x) => x.place === editPosDraft)?.percent ?? 0);
+                    }}
+                    className="text-[10px] uppercase tracking-widest text-brass-300 hover:text-brass-200"
+                  >reset to auto</button>
+                )}
+              </label>
+              <Input
+                type="number"
+                value={editPrizeDraft}
+                suffix={currency}
+                onChange={(e) => {
+                  setEditPrizeDraft(Number(e.target.value));
+                  setPrizeManuallyEdited(true);
+                }}
+              />
+              <p className="text-[11px] text-ink-400 mt-1">
+                {prizeManuallyEdited
+                  ? `Custom — saved as-is. Auto-payout for ${formatPlace(editPosDraft)} is ${formatMoney(payouts.find((x) => x.place === editPosDraft)?.percent ?? 0, currency)}.`
+                  : `Auto-derived from payout structure for ${formatPlace(editPosDraft)}.`}
               </p>
             </div>
-            <Button full onClick={saveEditPlayer}>Save position</Button>
+            <Button full onClick={saveEditPlayer}>Save</Button>
             <div className="border-t border-felt-800 pt-4 space-y-2">
               {editingPlayer.eliminated_at !== null && (
                 <Button variant="ghost" full onClick={() => unbustPlayer(editingPlayer)}>

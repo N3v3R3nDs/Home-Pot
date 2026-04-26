@@ -13,7 +13,6 @@ import { StatusPill } from '@/components/StatusPill';
 import { JoinBadge } from '@/components/JoinBadge';
 import { chipClatterSound, cashRegisterSound, celebrationSound } from '@/lib/sounds';
 import { EmptyStateBadge } from '@/components/EmptyStateBadge';
-import { VirtualTable } from './VirtualTable';
 import {
   computePlayerStats, tableTotal, totalBoughtIn, totalCashedOut,
   topUpChampion, biggestStake, hotSeat, biggestSingleBuyIn,
@@ -251,28 +250,18 @@ export function MonitorBody({ cashGameId, spectator = false }: MonitorBodyProps)
       )}
 
       {orientation === 'landscape' ? (
-        <div className={`absolute inset-0 z-10 flex flex-col gap-3 px-3 py-3 ${clean ? '' : 'pt-14'}`}>
-          {/* Top: hero card */}
-          <div className="shrink-0 flex flex-col items-center justify-center text-center" style={{ height: '38%' }}>
+        <div className={`absolute inset-0 z-10 flex gap-3 px-3 py-3 ${clean ? '' : 'pt-14'}`}>
+          {/* Left: hero card dominates */}
+          <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center">
             <HeroDisplay hero={hero} totalCards={heroCards.length} activeIdx={heroIdx} />
           </div>
-          {/* Middle: virtual table dominates */}
-          <div className="flex-1 min-h-0 flex items-center gap-3 overflow-hidden">
-            <div className="flex-1 min-w-0">
-              {seated.length > 0 ? (
-                <VirtualTable seated={seated} currency={currency} sessionDurationMs={sessionMs} />
-              ) : (
-                <div className="h-full grid place-items-center">
-                  <EmptyStateBadge glyph="🃏" title={t('noOneSeated')} />
-                </div>
-              )}
-            </div>
-            {/* Right rail stats */}
-            <div className="flex flex-col gap-2 w-[18%] max-w-[220px] min-w-[150px] overflow-hidden">
-              <CompactStatNum label={t('seated')} value={seated.length} />
-              <CompactStatNum label={t('cashedOutShort')} value={cashedOut.length} />
-              <CompactStatNum label={t('buyInsLabel')} value={buyIns.length} />
-            </div>
+
+          {/* Right: stats stack + seated list */}
+          <div className="flex flex-col gap-2 w-[28%] max-w-[320px] min-w-[200px] overflow-hidden">
+            <CompactStatNum label={t('seated')} value={seated.length} />
+            <CompactStatNum label={t('cashedOutShort')} value={cashedOut.length} />
+            <CompactStatNum label={t('buyInsLabel')} value={buyIns.length} />
+            <SeatedList players={seated} currency={currency} t={t} now={now} compact />
           </div>
         </div>
       ) : (

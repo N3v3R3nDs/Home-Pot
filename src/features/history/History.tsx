@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useSettings } from '@/store/settings';
 import { useSeason } from '@/store/season';
 import type { Season } from '@/types/db';
-import { formatMoney, formatPlace } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
 import { useConfirm } from '@/components/ui/Confirm';
 import { useToast } from '@/components/ui/Toast';
 import { StatsCharts } from './Charts';
@@ -68,22 +68,41 @@ export function History() {
   const toast = useToast();
   const [editingTour, setEditingTour] = useState<string | null>(null);
   const [prizeDraft, setPrizeDraft] = useState<Record<string, number>>({});
+  const [posDraft, setPosDraft] = useState<Record<string, number | null>>({});
 
   const openPrizeEdit = (tournamentId: string, currentPlayers: TournamentPlayer[]) => {
-    const draft: Record<string, number> = {};
-    for (const p of currentPlayers) draft[p.id] = Number(p.prize ?? 0);
-    setPrizeDraft(draft);
+    const prize: Record<string, number> = {};
+    const pos: Record<string, number | null> = {};
+    for (const p of currentPlayers) {
+      prize[p.id] = Number(p.prize ?? 0);
+      pos[p.id] = p.finishing_position;
+    }
+    setPrizeDraft(prize);
+    setPosDraft(pos);
     setEditingTour(tournamentId);
   };
   const savePrizes = async () => {
     if (!editingTour) return;
-    const updates = Object.entries(prizeDraft).map(([id, prize]) =>
-      supabase.from('tournament_players').update({ prize }).eq('id', id),
+    const ids = new Set([...Object.keys(prizeDraft), ...Object.keys(posDraft)]);
+    const updates = Array.from(ids).map((id) =>
+      supabase.from('tournament_players')
+        .update({
+          prize: Number(prizeDraft[id] ?? 0),
+          finishing_position: posDraft[id] ?? null,
+        })
+        .eq('id', id),
     );
     const results = await Promise.all(updates);
     const failed = results.filter((r) => r.error).length;
-    if (failed > 0) toast(`${failed} updates failed`, 'error');
-    else toast('Prizes updated ✓', 'success');
+    if (failed > 0) {
+      // Surface the actual error so silent failures stop being silent.
+      const msg = results.find((r) => r.error)?.error?.message ?? 'unknown error';
+      // eslint-disable-next-line no-console
+      console.error('[History] savePrizes failed:', results.filter((r) => r.error).map((r) => r.error));
+      toast(`${failed} update${failed === 1 ? '' : 's'} failed: ${msg}`, 'error');
+    } else {
+      toast('Prizes updated ✓', 'success');
+    }
     setEditingTour(null);
   };
   const [tab, setTab] = useState<Tab>('season');
@@ -427,9 +446,17 @@ export function History() {
                 const winner = ps.find((p) => p.finishing_position === 1);
                 const pool = ps.reduce((s, p) => s + p.buy_ins * t.buy_in + p.rebuys * (t.rebuy_amount ?? 0) + p.addons * (t.addon_amount ?? 0), 0);
                 const expanded = editingTour === t.id;
-                const ranked = ps
-                  .filter((p) => p.finishing_position !== null)
-                  .sort((a, b) => (a.finishing_position ?? 999) - (b.finishing_position ?? 999));
+                // Show *every* player so the host can assign positions/prizes
+                // even to people who didn't get a finishing_position via the
+                // bust flow (e.g. tournament ended early, or a manual call).
+                const sortedAll = [...ps].sort((a, b) => {
+                  const ap = posDraft[a.id] ?? a.finishing_position ?? 9999;
+                  const bp = posDraft[b.id] ?? b.finishing_position ?? 9999;
+                  if (ap !== bp) return ap - bp;
+                  const an = a.profile_id ? profileMap[a.profile_id]?.display_name ?? '' : (a.guest_name ?? '');
+                  const bn = b.profile_id ? profileMap[b.profile_id]?.display_name ?? '' : (b.guest_name ?? '');
+                  return an.localeCompare(bn);
+                });
                 return (
                   <li key={t.id} className="bg-felt-950/60 rounded-xl p-3">
                     <div className="flex items-center justify-between gap-2">
@@ -438,6 +465,11 @@ export function History() {
                         className="font-semibold flex-1 truncate text-left hover:text-brass-200"
                       >{expanded ? '▾' : '▸'} {t.name}</button>
                       <div className="font-mono text-brass-200">{formatMoney(pool, t.currency)}</div>
+                      <button
+                        onClick={() => expanded ? setEditingTour(null) : openPrizeEdit(t.id, ps)}
+                        className="text-brass-300/70 hover:text-brass-200 px-2 py-1 text-base leading-none"
+                        title="Edit prizes"
+                      >✏️</button>
                       <button
                         onClick={() => deleteTournament(t.id, t.name)}
                         className="text-red-400/60 hover:text-red-400 px-2 py-1 text-lg leading-none"
@@ -450,18 +482,34 @@ export function History() {
 
                     {expanded && (
                       <div className="mt-3 pt-3 border-t border-felt-800 space-y-2">
-                        <div className="text-[10px] uppercase tracking-widest text-brass-300">Edit prizes</div>
-                        {ranked.map((p) => {
+                        <div className="text-[10px] uppercase tracking-widest text-brass-300 flex items-center justify-between">
+                          <span>Edit positions & prizes</span>
+                          <span className="text-ink-400 normal-case tracking-normal">tap any field to change</span>
+                        </div>
+                        {sortedAll.map((p) => {
                           const name = p.profile_id ? profileMap[p.profile_id]?.display_name ?? '…' : (p.guest_name ?? 'Guest');
                           return (
                             <div key={p.id} className="flex items-center gap-2">
-                              <span className="w-12 text-xs text-ink-400">{p.finishing_position && formatPlace(p.finishing_position)}</span>
+                              <input
+                                type="number"
+                                min={1}
+                                value={posDraft[p.id] ?? ''}
+                                placeholder="—"
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  setPosDraft({ ...posDraft, [p.id]: raw === '' ? null : Math.max(1, Number(raw)) });
+                                }}
+                                className="input !py-1.5 !px-2 w-14 text-center font-mono text-xs"
+                                title="Finishing position"
+                              />
                               <span className="flex-1 text-sm truncate">{name}</span>
                               <input
                                 type="number"
+                                min={0}
                                 value={prizeDraft[p.id] ?? 0}
                                 onChange={(e) => setPrizeDraft({ ...prizeDraft, [p.id]: Number(e.target.value) })}
                                 className="input !py-1.5 !px-2 w-28 text-right font-mono text-sm"
+                                title="Prize amount"
                               />
                             </div>
                           );
