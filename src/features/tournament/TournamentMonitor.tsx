@@ -171,7 +171,7 @@ export function TournamentMonitor() {
           <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center">
             <div
               className="text-brass-300/80 uppercase tracking-[0.5em] font-semibold"
-              style={{ fontSize: 'clamp(0.75rem, 2.4vmin, 1.4rem)' }}
+              style={{ fontSize: 'clamp(1rem, 3.4vmin, 2rem)' }}
             >
               Level {clock.level?.level ?? 0}
             </div>
@@ -201,7 +201,7 @@ export function TournamentMonitor() {
               {formatDuration(clock.msRemaining)}
             </motion.div>
             {nextLevel && (
-              <div className="text-ink-300 mt-3" style={{ fontSize: 'clamp(0.85rem, 2.4vmin, 1.4rem)' }}>
+              <div className="text-ink-300 mt-3" style={{ fontSize: 'clamp(1.1rem, 3.4vmin, 2rem)' }}>
                 Next: <span className="text-brass-200 font-semibold">{nextLevel.sb}/{nextLevel.bb}</span>
                 {nextLevel.breakAfter ? ' (break)' : ''}
               </div>
@@ -242,7 +242,7 @@ export function TournamentMonitor() {
           <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center">
             <div
               className="text-brass-300/80 uppercase tracking-[0.5em] font-semibold"
-              style={{ fontSize: 'clamp(0.7rem, 2.5vmin, 1.25rem)' }}
+              style={{ fontSize: 'clamp(1rem, 3.4vmin, 1.75rem)' }}
             >
               Level {clock.level?.level ?? 0}
             </div>
@@ -272,7 +272,7 @@ export function TournamentMonitor() {
               {formatDuration(clock.msRemaining)}
             </motion.div>
             {nextLevel && (
-              <div className="text-ink-300 mt-2" style={{ fontSize: 'clamp(0.75rem, 2vmin, 1.1rem)' }}>
+              <div className="text-ink-300 mt-2" style={{ fontSize: 'clamp(1rem, 3vmin, 1.5rem)' }}>
                 Next: <span className="text-brass-200 font-semibold">{nextLevel.sb}/{nextLevel.bb}</span>
                 {nextLevel.breakAfter ? ' (break)' : ''}
               </div>

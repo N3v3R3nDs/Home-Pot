@@ -80,9 +80,28 @@ export function Dashboard() {
     };
     load();
 
+    // Reconcile from realtime payloads — instant updates, no extra queries.
     const ch = supabase.channel('dashboard')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournaments' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_games' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournaments' }, (p) => {
+        const row = (p.new ?? p.old) as Tournament;
+        setTournaments((prev) => {
+          const without = prev.filter((x) => x.id !== row.id);
+          if (p.eventType === 'DELETE' || (row as Tournament).deleted_at) return without;
+          return [row as Tournament, ...without].sort(
+            (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+          ).slice(0, 20);
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_games' }, (p) => {
+        const row = (p.new ?? p.old) as CashGame;
+        setCashGames((prev) => {
+          const without = prev.filter((x) => x.id !== row.id);
+          if (p.eventType === 'DELETE' || (row as CashGame).deleted_at) return without;
+          return [row as CashGame, ...without].sort(
+            (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+          ).slice(0, 20);
+        });
+      })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);

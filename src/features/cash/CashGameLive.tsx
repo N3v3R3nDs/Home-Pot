@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { useConfirm } from '@/components/ui/Confirm';
 import { useT } from '@/lib/i18n';
+import type { Season } from '@/types/db';
 import { supabase } from '@/lib/supabase';
 import { useSettings } from '@/store/settings';
 import { formatMoney } from '@/lib/format';
@@ -34,8 +35,14 @@ export function CashGameLive() {
   const [leaveInBank, setLeaveInBank] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [seasons, setSeasons] = useState<Season[]>([]);
   const confirm = useConfirm();
   const t = useT();
+
+  useEffect(() => {
+    supabase.from('seasons').select('*').order('starts_on', { ascending: false })
+      .then(({ data }) => setSeasons((data ?? []) as Season[]));
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -184,10 +191,11 @@ export function CashGameLive() {
       });
       if (!ok) return;
     }
-    setGame({ ...game, state: 'finished', ended_at: new Date().toISOString() });
     setShowAdmin(false);
-    navigate('/');
-    await supabase.from('cash_games').update({ state: 'finished', ended_at: new Date().toISOString() }).eq('id', game.id);
+    const endedAt = new Date().toISOString();
+    setGame({ ...game, state: 'finished', ended_at: endedAt });
+    await supabase.from('cash_games').update({ state: 'finished', ended_at: endedAt }).eq('id', game.id);
+    navigate('/history');
   };
   const deleteCashGame = async () => {
     if (!game) return;
@@ -327,6 +335,23 @@ export function CashGameLive() {
           <Button variant="ghost" full onClick={() => { setRenaming(game.name); setShowAdmin(false); }}>
             ✏️ Rename
           </Button>
+          {seasons.length > 0 && (
+            <div>
+              <label className="text-[10px] uppercase tracking-widest text-ink-400 mb-1 block">🏷 Season</label>
+              <select
+                value={game.season_id ?? ''}
+                onChange={async (e) => {
+                  const v = e.target.value || null;
+                  setGame({ ...game, season_id: v });
+                  await supabase.from('cash_games').update({ season_id: v }).eq('id', game.id);
+                }}
+                className="input w-full text-sm"
+              >
+                <option value="">— No season —</option>
+                {seasons.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          )}
           {game.state !== 'finished' && (
             <Button variant="ghost" full onClick={endCashGame}>
               🏁 End cash game now

@@ -4,7 +4,11 @@ import { Card } from '@/components/ui/Card';
 import { supabase } from '@/lib/supabase';
 import { useSettings } from '@/store/settings';
 import { useSeason } from '@/store/season';
-import { formatMoney } from '@/lib/format';
+import type { Season } from '@/types/db';
+import { formatMoney, formatPlace } from '@/lib/format';
+import { useConfirm } from '@/components/ui/Confirm';
+import { useToast } from '@/components/ui/Toast';
+import { StatsCharts } from './Charts';
 import type {
   CashBuyIn, CashGame, CashGamePlayer, Profile, Tournament, TournamentPlayer,
 } from '@/types/db';
@@ -48,10 +52,62 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
 
 export function History() {
   const { currency } = useSettings();
-  const { activeSeasonId } = useSeason();
+  const { activeSeasonId, setActiveSeasonId } = useSeason();
+  const confirm = useConfirm();
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase.from('seasons').select('*').order('starts_on', { ascending: false });
+      setSeasons((data ?? []) as Season[]);
+    };
+    load();
+    const ch = supabase.channel('history-seasons')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'seasons' }, load).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  const toast = useToast();
+  const [editingTour, setEditingTour] = useState<string | null>(null);
+  const [prizeDraft, setPrizeDraft] = useState<Record<string, number>>({});
+
+  const openPrizeEdit = (tournamentId: string, currentPlayers: TournamentPlayer[]) => {
+    const draft: Record<string, number> = {};
+    for (const p of currentPlayers) draft[p.id] = Number(p.prize ?? 0);
+    setPrizeDraft(draft);
+    setEditingTour(tournamentId);
+  };
+  const savePrizes = async () => {
+    if (!editingTour) return;
+    const updates = Object.entries(prizeDraft).map(([id, prize]) =>
+      supabase.from('tournament_players').update({ prize }).eq('id', id),
+    );
+    const results = await Promise.all(updates);
+    const failed = results.filter((r) => r.error).length;
+    if (failed > 0) toast(`${failed} updates failed`, 'error');
+    else toast('Prizes updated ✓', 'success');
+    setEditingTour(null);
+  };
   const [tab, setTab] = useState<Tab>('season');
   const [search, setSearch] = useState('');
   const [period, setPeriod] = useState<string>('all');
+
+  const deleteTournament = async (id: string, name: string) => {
+    if (!await confirm({
+      title: `Delete "${name}"?`,
+      message: 'This removes the tournament from history. Bank transactions are kept in the ledger.',
+      confirmLabel: '🗑 Delete',
+      destructive: true,
+    })) return;
+    await supabase.from('tournaments').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+  };
+  const deleteCashGame = async (id: string, name: string) => {
+    if (!await confirm({
+      title: `Delete "${name}"?`,
+      message: 'This removes the cash game from history. Bank transactions are preserved.',
+      confirmLabel: '🗑 Delete',
+      destructive: true,
+    })) return;
+    await supabase.from('cash_games').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+  };
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [tournPlayers, setTournPlayers] = useState<TournamentPlayer[]>([]);
   const [cashGames, setCashGames] = useState<CashGame[]>([]);
@@ -60,55 +116,118 @@ export function History() {
   const [profileMap, setProfileMap] = useState<Record<string, Profile>>({});
 
   useEffect(() => {
-    const load = async () => {
+    let cancelled = false;
+
+    // Initial fetch — fully parallel; all related queries fire at once and
+    // stitched together when they all return.
+    const initialLoad = async () => {
       let tq = supabase.from('tournaments').select('*').is('deleted_at', null).eq('state', 'finished').order('created_at', { ascending: false });
       let cq = supabase.from('cash_games').select('*').is('deleted_at', null).eq('state', 'finished').order('created_at', { ascending: false });
-      if (activeSeasonId) {
-        tq = tq.eq('season_id', activeSeasonId);
-        cq = cq.eq('season_id', activeSeasonId);
-      }
+      if (activeSeasonId) { tq = tq.eq('season_id', activeSeasonId); cq = cq.eq('season_id', activeSeasonId); }
+
       const [{ data: tours }, { data: cgs }] = await Promise.all([tq, cq]);
+      if (cancelled) return;
       const ts = (tours ?? []) as Tournament[];
       const cs = (cgs ?? []) as CashGame[];
       setTournaments(ts); setCashGames(cs);
 
       const tIds = ts.map((x) => x.id);
       const cIds = cs.map((x) => x.id);
-      const [{ data: tp }, { data: cp }] = await Promise.all([
+      // ALL detail fetches in parallel (was sequential, slow).
+      const [{ data: tp }, { data: cp }, { data: profs0 }] = await Promise.all([
         tIds.length ? supabase.from('tournament_players').select('*').in('tournament_id', tIds) : Promise.resolve({ data: [] }),
         cIds.length ? supabase.from('cash_game_players').select('*').in('cash_game_id', cIds) : Promise.resolve({ data: [] }),
+        supabase.from('profiles').select('*'),
       ]);
+      if (cancelled) return;
       setTournPlayers((tp ?? []) as TournamentPlayer[]);
       setCashPlayers((cp ?? []) as CashGamePlayer[]);
+      setProfileMap(Object.fromEntries((profs0 ?? []).map((p) => [p.id, p as Profile])));
 
       const cpIds = (cp ?? []).map((x) => x.id);
       if (cpIds.length) {
         const { data: bi } = await supabase.from('cash_buy_ins').select('*').in('cash_game_player_id', cpIds);
-        setCashBuyIns((bi ?? []) as CashBuyIn[]);
-      }
-      const profIds = [
-        ...(tp ?? []).map((p) => p.profile_id),
-        ...(cp ?? []).map((p) => p.profile_id),
-      ].filter(Boolean) as string[];
-      if (profIds.length) {
-        const { data: profs } = await supabase.from('profiles').select('*').in('id', Array.from(new Set(profIds)));
-        setProfileMap(Object.fromEntries((profs ?? []).map((p) => [p.id, p as Profile])));
+        if (!cancelled) setCashBuyIns((bi ?? []) as CashBuyIn[]);
       }
     };
-    load();
+    initialLoad();
 
-    // Realtime: any state change on tournaments/cash games or any update to
-    // their players/buy-ins triggers a fresh load. Cheap and correct — the
-    // history page is rarely open and full reloads are well under a second.
+    // Realtime — reconcile from each event payload directly. No re-fetch.
+    // This makes "End tournament" appear in History within ~50ms of the click
+    // (just the ws round-trip), instead of waiting for 4-5 sequential queries.
+    const matchSeason = <T extends { season_id: string | null }>(row: T) =>
+      !activeSeasonId || row.season_id === activeSeasonId;
+
     const ch = supabase.channel('history')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournaments' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_players' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_games' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_game_players' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_buy_ins' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournaments' }, (p) => {
+        const row = (p.new ?? p.old) as Tournament;
+        setTournaments((prev) => {
+          const without = prev.filter((x) => x.id !== row.id);
+          if (p.eventType === 'DELETE') return without;
+          // Include only finished + not deleted + matching season
+          if ((row as Tournament).state === 'finished'
+              && !(row as Tournament).deleted_at
+              && matchSeason(row as Tournament)) {
+            return [row as Tournament, ...without].sort(
+              (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+            );
+          }
+          return without;
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_games' }, (p) => {
+        const row = (p.new ?? p.old) as CashGame;
+        setCashGames((prev) => {
+          const without = prev.filter((x) => x.id !== row.id);
+          if (p.eventType === 'DELETE') return without;
+          if ((row as CashGame).state === 'finished'
+              && !(row as CashGame).deleted_at
+              && matchSeason(row as CashGame)) {
+            return [row as CashGame, ...without].sort(
+              (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+            );
+          }
+          return without;
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_players' }, (p) => {
+        const row = (p.new ?? p.old) as TournamentPlayer;
+        setTournPlayers((prev) => {
+          if (p.eventType === 'DELETE') return prev.filter((x) => x.id !== row.id);
+          const i = prev.findIndex((x) => x.id === row.id);
+          if (i === -1) return [...prev, row];
+          const next = prev.slice(); next[i] = row; return next;
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_game_players' }, (p) => {
+        const row = (p.new ?? p.old) as CashGamePlayer;
+        setCashPlayers((prev) => {
+          if (p.eventType === 'DELETE') return prev.filter((x) => x.id !== row.id);
+          const i = prev.findIndex((x) => x.id === row.id);
+          if (i === -1) return [...prev, row];
+          const next = prev.slice(); next[i] = row; return next;
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_buy_ins' }, (p) => {
+        const row = (p.new ?? p.old) as CashBuyIn;
+        setCashBuyIns((prev) => {
+          if (p.eventType === 'DELETE') return prev.filter((x) => x.id !== row.id);
+          const i = prev.findIndex((x) => x.id === row.id);
+          if (i === -1) return [...prev, row];
+          const next = prev.slice(); next[i] = row; return next;
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, (p) => {
+        const row = (p.new ?? p.old) as Profile;
+        setProfileMap((prev) => {
+          const next = { ...prev };
+          if (p.eventType === 'DELETE') delete next[row.id];
+          else next[row.id] = row;
+          return next;
+        });
+      })
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => { cancelled = true; supabase.removeChannel(ch); };
   }, [activeSeasonId]);
 
   const memberKey = (p: { profile_id?: string | null; guest_name?: string | null }) =>
@@ -210,6 +329,22 @@ export function History() {
           {MONTH_FILTERS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
         </select>
       </div>
+      {seasons.length > 0 && (
+        <div>
+          <select
+            value={activeSeasonId ?? ''}
+            onChange={(e) => setActiveSeasonId(e.target.value || null)}
+            className="input w-full text-sm"
+          >
+            <option value="">🌐 All seasons (everything)</option>
+            {seasons.map((s) => (
+              <option key={s.id} value={s.id}>
+                🏷 {s.name} ({new Date(s.starts_on).toLocaleDateString('nb-NO')} – {new Date(s.ends_on).toLocaleDateString('nb-NO')})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-2">
         {(['season', 'tournaments', 'cash'] as Tab[]).map((t) => (
@@ -224,6 +359,17 @@ export function History() {
           </button>
         ))}
       </div>
+
+      {tab === 'season' && (
+        <StatsCharts
+          tournaments={tournaments}
+          tournPlayers={tournPlayers}
+          cashGames={cashGames}
+          cashPlayers={cashPlayers}
+          cashBuyIns={cashBuyIns}
+          profileMap={profileMap}
+        />
+      )}
 
       {tab === 'season' && (
         filteredLeaderboard.length === 0 ? (
@@ -280,15 +426,58 @@ export function History() {
                 const ps = tournPlayers.filter((p) => p.tournament_id === t.id);
                 const winner = ps.find((p) => p.finishing_position === 1);
                 const pool = ps.reduce((s, p) => s + p.buy_ins * t.buy_in + p.rebuys * (t.rebuy_amount ?? 0) + p.addons * (t.addon_amount ?? 0), 0);
+                const expanded = editingTour === t.id;
+                const ranked = ps
+                  .filter((p) => p.finishing_position !== null)
+                  .sort((a, b) => (a.finishing_position ?? 999) - (b.finishing_position ?? 999));
                 return (
                   <li key={t.id} className="bg-felt-950/60 rounded-xl p-3">
-                    <div className="flex items-center justify-between">
-                      <div className="font-semibold">{t.name}</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => expanded ? setEditingTour(null) : openPrizeEdit(t.id, ps)}
+                        className="font-semibold flex-1 truncate text-left hover:text-brass-200"
+                      >{expanded ? '▾' : '▸'} {t.name}</button>
                       <div className="font-mono text-brass-200">{formatMoney(pool, t.currency)}</div>
+                      <button
+                        onClick={() => deleteTournament(t.id, t.name)}
+                        className="text-red-400/60 hover:text-red-400 px-2 py-1 text-lg leading-none"
+                        title="Delete from history"
+                      >🗑</button>
                     </div>
                     <div className="text-xs text-ink-400 mt-1">
                       {new Date(t.created_at).toLocaleDateString('nb-NO')} · {ps.length} players · 🏆 {winner ? (winner.profile_id ? profileMap[winner.profile_id]?.display_name : winner.guest_name) ?? '—' : '—'}
                     </div>
+
+                    {expanded && (
+                      <div className="mt-3 pt-3 border-t border-felt-800 space-y-2">
+                        <div className="text-[10px] uppercase tracking-widest text-brass-300">Edit prizes</div>
+                        {ranked.map((p) => {
+                          const name = p.profile_id ? profileMap[p.profile_id]?.display_name ?? '…' : (p.guest_name ?? 'Guest');
+                          return (
+                            <div key={p.id} className="flex items-center gap-2">
+                              <span className="w-12 text-xs text-ink-400">{p.finishing_position && formatPlace(p.finishing_position)}</span>
+                              <span className="flex-1 text-sm truncate">{name}</span>
+                              <input
+                                type="number"
+                                value={prizeDraft[p.id] ?? 0}
+                                onChange={(e) => setPrizeDraft({ ...prizeDraft, [p.id]: Number(e.target.value) })}
+                                className="input !py-1.5 !px-2 w-28 text-right font-mono text-sm"
+                              />
+                            </div>
+                          );
+                        })}
+                        <div className="flex justify-between items-center pt-2">
+                          <span className="text-[10px] text-ink-400">
+                            Sum: <span className="font-mono text-brass-200">{formatMoney(Object.values(prizeDraft).reduce((s, n) => s + Number(n || 0), 0), t.currency)}</span>
+                            {' / '}<span className="font-mono">{formatMoney(pool, t.currency)}</span>
+                          </span>
+                          <div className="flex gap-2">
+                            <button onClick={() => setEditingTour(null)} className="text-xs text-ink-400 px-3 py-1.5">Cancel</button>
+                            <button onClick={savePrizes} className="btn-primary !py-1.5 !px-3 text-xs">Save</button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </li>
                 );
               })}
@@ -305,9 +494,14 @@ export function History() {
             <ul className="space-y-2">
               {cashRows.map((r) => (
                 <li key={r.game.id} className="bg-felt-950/60 rounded-xl p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="font-semibold">{r.game.name}</div>
+                  <div className="flex items-center justify-between gap-2">
+                    <Link to={`/cash/${r.game.id}`} className="font-semibold flex-1 truncate hover:text-brass-200">{r.game.name}</Link>
                     <div className="font-mono text-brass-200">{formatMoney(r.totalIn, r.game.currency)}</div>
+                    <button
+                      onClick={() => deleteCashGame(r.game.id, r.game.name)}
+                      className="text-red-400/60 hover:text-red-400 px-2 py-1 text-lg leading-none"
+                      title="Delete from history"
+                    >🗑</button>
                   </div>
                   <div className="text-xs text-ink-400 mt-1">
                     {new Date(r.game.created_at).toLocaleDateString('nb-NO')} · {r.players} players · top: <b className="text-emerald-400">{r.winnerName}</b> {r.winnerNet > 0 && `+${formatMoney(r.winnerNet, r.game.currency)}`}

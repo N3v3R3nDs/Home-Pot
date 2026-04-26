@@ -19,6 +19,7 @@ import { haptic } from '@/lib/haptics';
 import { generateJoinCode } from '@/lib/joinCode';
 import { useT } from '@/lib/i18n';
 import { renderShareCard, shareCard } from '@/lib/shareCard';
+import type { Season } from '@/types/db';
 import { HandTimer } from '@/components/HandTimer';
 import { calculatePrizePool, distributePrizes } from './payouts';
 import { formatChips, formatDuration, formatMoney, formatPlace } from '@/lib/format';
@@ -48,7 +49,13 @@ export function TournamentLive() {
   const [claimName, setClaimName] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [seasons, setSeasons] = useState<Season[]>([]);
   const autoClaimedRef = useRef(false);
+
+  useEffect(() => {
+    supabase.from('seasons').select('*').order('starts_on', { ascending: false })
+      .then(({ data }) => setSeasons((data ?? []) as Season[]));
+  }, []);
 
   // Lookup display names for joined profiles
   useEffect(() => {
@@ -219,10 +226,12 @@ export function TournamentLive() {
       message: t('endTournamentBody'),
       confirmLabel: t('endNow'),
     })) return;
-    patchTournament({ state: 'finished' });
     setShowAdmin(false);
-    navigate('/');
+    patchTournament({ state: 'finished' });
+    // Write FIRST, then navigate — guarantees the realtime UPDATE has been
+    // emitted by the time the dashboard / history screens render.
     await supabase.from('tournaments').update({ state: 'finished' }).eq('id', tournament.id);
+    navigate('/history');
   };
   const deleteTournament = async () => {
     if (!await confirm({
@@ -676,6 +685,23 @@ export function TournamentLive() {
           <Button variant="ghost" full onClick={() => { setRenaming(tournament.name); setShowAdmin(false); }}>
             ✏️ {t('rename')}
           </Button>
+          {seasons.length > 0 && (
+            <div>
+              <label className="text-[10px] uppercase tracking-widest text-ink-400 mb-1 block">🏷 Season</label>
+              <select
+                value={tournament.season_id ?? ''}
+                onChange={async (e) => {
+                  const v = e.target.value || null;
+                  patchTournament({ season_id: v });
+                  await supabase.from('tournaments').update({ season_id: v }).eq('id', tournament.id);
+                }}
+                className="input w-full text-sm"
+              >
+                <option value="">— No season —</option>
+                {seasons.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          )}
           <button
             onClick={async () => {
               const next = !tournament.auto_advance;
