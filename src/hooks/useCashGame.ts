@@ -2,6 +2,51 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { CashBuyIn, CashGame, CashGamePlayer, Profile } from '@/types/db';
 
+// Module-level cache so rotation between live and monitor doesn't show a
+// "Loading…" flash on every remount. Hydrate instantly from cache; the
+// network refresh happens silently in the background.
+interface CashCacheEntry {
+  game: CashGame | null;
+  players: CashGamePlayer[];
+  buyIns: CashBuyIn[];
+  profileMap: Record<string, Profile>;
+}
+const cache = new Map<string, CashCacheEntry>();
+
+function sameGame(a: CashGame | null, b: CashGame | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.id === b.id
+    && a.state === b.state
+    && a.name === b.name
+    && a.small_blind === b.small_blind
+    && a.big_blind === b.big_blind
+    && a.join_code === b.join_code
+    && a.season_id === b.season_id
+    && a.deleted_at === b.deleted_at
+    && a.ended_at === b.ended_at;
+}
+function samePlayers(a: CashGamePlayer[], b: CashGamePlayer[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    if (x.id !== y.id) return false;
+    if (x.cash_out !== y.cash_out) return false;
+    if (x.guest_name !== y.guest_name) return false;
+    if (x.profile_id !== y.profile_id) return false;
+  }
+  return true;
+}
+function sameBuyIns(a: CashBuyIn[], b: CashBuyIn[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].id !== b[i].id || a[i].amount !== b[i].amount) return false;
+  }
+  return true;
+}
+
 /**
  * Realtime cash-game data hook. Loads the game + its players + their buy-ins
  * and a profile lookup map, then subscribes to live changes on all three
@@ -11,11 +56,12 @@ import type { CashBuyIn, CashGame, CashGamePlayer, Profile } from '@/types/db';
  * PublicCashView (spectator).
  */
 export function useCashGame(cashGameId: string | undefined) {
-  const [game, setGame] = useState<CashGame | null>(null);
-  const [players, setPlayers] = useState<CashGamePlayer[]>([]);
-  const [buyIns, setBuyIns] = useState<CashBuyIn[]>([]);
-  const [profileMap, setProfileMap] = useState<Record<string, Profile>>({});
-  const [loading, setLoading] = useState(true);
+  const cached = cashGameId ? cache.get(cashGameId) : undefined;
+  const [game, setGame] = useState<CashGame | null>(cached?.game ?? null);
+  const [players, setPlayers] = useState<CashGamePlayer[]>(cached?.players ?? []);
+  const [buyIns, setBuyIns] = useState<CashBuyIn[]>(cached?.buyIns ?? []);
+  const [profileMap, setProfileMap] = useState<Record<string, Profile>>(cached?.profileMap ?? {});
+  const [loading, setLoading] = useState(!cached);
 
   // Initial load + realtime subscription. We fetch a fresh snapshot whenever
   // we (re)mount or the tab becomes visible again, so stale data from a
@@ -23,23 +69,48 @@ export function useCashGame(cashGameId: string | undefined) {
   useEffect(() => {
     if (!cashGameId) return;
     let cancelled = false;
+    let lastLoadAt = 0;
+    let inFlight: Promise<void> | null = null;
 
-    const fetchSnapshot = async () => {
-      const [{ data: g }, { data: ps }] = await Promise.all([
-        supabase.from('cash_games').select('*').eq('id', cashGameId).maybeSingle(),
-        supabase.from('cash_game_players').select('*').eq('cash_game_id', cashGameId).order('created_at'),
-      ]);
-      if (cancelled) return;
-      setGame(g as CashGame | null);
-      setPlayers((ps ?? []) as CashGamePlayer[]);
-      const playerIds = (ps ?? []).map((p) => p.id);
-      if (playerIds.length) {
-        const { data: bi } = await supabase.from('cash_buy_ins').select('*').in('cash_game_player_id', playerIds);
-        if (!cancelled) setBuyIns((bi ?? []) as CashBuyIn[]);
-      } else if (!cancelled) {
-        setBuyIns([]);
-      }
-      if (!cancelled) setLoading(false);
+    const fetchSnapshot = async (): Promise<void> => {
+      // Coalesce overlapping fetch requests + throttle to >=500ms apart.
+      if (inFlight) return inFlight;
+      if (Date.now() - lastLoadAt < 500) return;
+      inFlight = (async () => {
+        try {
+          const [{ data: g }, { data: ps }] = await Promise.all([
+            supabase.from('cash_games').select('*').eq('id', cashGameId).maybeSingle(),
+            supabase.from('cash_game_players').select('*').eq('cash_game_id', cashGameId).order('created_at'),
+          ]);
+          if (cancelled) return;
+          const gameRow = g as CashGame | null;
+          const playerRows = (ps ?? []) as CashGamePlayer[];
+          setGame((prev) => sameGame(prev, gameRow) ? prev : gameRow);
+          setPlayers((prev) => samePlayers(prev, playerRows) ? prev : playerRows);
+          const playerIds = playerRows.map((p) => p.id);
+          let buyInRows: CashBuyIn[] = [];
+          if (playerIds.length) {
+            const { data: bi } = await supabase.from('cash_buy_ins').select('*').in('cash_game_player_id', playerIds);
+            if (cancelled) return;
+            buyInRows = (bi ?? []) as CashBuyIn[];
+            setBuyIns((prev) => sameBuyIns(prev, buyInRows) ? prev : buyInRows);
+          } else {
+            setBuyIns((prev) => prev.length === 0 ? prev : []);
+          }
+          const existing = cache.get(cashGameId);
+          cache.set(cashGameId, {
+            game: gameRow,
+            players: playerRows,
+            buyIns: buyInRows,
+            profileMap: existing?.profileMap ?? {},
+          });
+          if (!cancelled) setLoading(false);
+        } finally {
+          lastLoadAt = Date.now();
+          inFlight = null;
+        }
+      })();
+      return inFlight;
     };
     void fetchSnapshot();
 
@@ -94,7 +165,7 @@ export function useCashGame(cashGameId: string | undefined) {
     // dodgy networks (TV, public wifi). Live and monitor views must always
     // agree on counts/totals — both derive from the same DB rows — so the
     // worst-case divergence between any two views needs to be tiny.
-    const pollId = setInterval(() => { if (!cancelled) void fetchSnapshot(); }, 3_000);
+    const pollId = setInterval(() => { if (!cancelled) void fetchSnapshot(); }, 5_000);
 
     return () => {
       cancelled = true;
