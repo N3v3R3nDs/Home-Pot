@@ -36,15 +36,22 @@ export function Settings() {
     })) return;
     await signOut();
   };
-  const { currency, setCurrency, inventory, setInventory, soundEnabled, toggleSound, theme, setTheme, language, setLanguage, largeText, toggleLargeText, tournamentDefaults, setTournamentDefaults } = useSettings();
+  const { currency, setCurrency, inventory, setInventory, soundEnabled, toggleSound, theme, setTheme, language, setLanguage, largeText, toggleLargeText, tournamentDefaults, setTournamentDefaults, cashDefaults, setCashDefaults } = useSettings();
   const [defDraft, setDefDraft] = useState(tournamentDefaults);
+  const [cashDraft, setCashDraft] = useState(cashDefaults);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [defSavedAt, setDefSavedAt] = useState<number | null>(null);
+  const [cashSavedAt, setCashSavedAt] = useState<number | null>(null);
   const [subtab, setSubtab] = useState<'settings' | 'admin'>('settings');
   const saveDefaults = () => {
     setTournamentDefaults(defDraft);
     setDefSavedAt(Date.now());
     setTimeout(() => setDefSavedAt(null), 2200);
+  };
+  const saveCashDefaults = () => {
+    setCashDefaults(cashDraft);
+    setCashSavedAt(Date.now());
+    setTimeout(() => setCashSavedAt(null), 2200);
   };
   const t = useT();
   const [notifPerm, setNotifPerm] = useState(notificationPermission());
@@ -399,6 +406,33 @@ export function Settings() {
 
   const adminSection = (
     <>
+      {/* Cash game defaults — pre-fill SB/BB on the New Cash Game screen. */}
+      <Card>
+        <div className="label !mb-0.5">💵 Cash game defaults</div>
+        <div className="text-[11px] text-ink-400 mb-3">Pre-fill blinds on the New Cash Game screen.</div>
+        <div className="grid grid-cols-2 gap-2">
+          <NumberInput
+            label="Small blind"
+            value={cashDraft.smallBlind}
+            suffix={currency}
+            min={0}
+            required
+            onValueChange={(n) => setCashDraft({ ...cashDraft, smallBlind: n })}
+          />
+          <NumberInput
+            label="Big blind"
+            value={cashDraft.bigBlind}
+            suffix={currency}
+            min={0}
+            required
+            onValueChange={(n) => setCashDraft({ ...cashDraft, bigBlind: n })}
+          />
+        </div>
+        <Button full className="mt-3" onClick={saveCashDefaults}>
+          {cashSavedAt ? '✓ Saved' : 'Save cash defaults'}
+        </Button>
+      </Card>
+
       {/* Advanced — collapsed by default. Mirrors the wizard's per-format
           field visibility so what you set here is what shows in step 1. */}
       <Card>

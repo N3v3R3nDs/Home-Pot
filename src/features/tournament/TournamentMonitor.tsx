@@ -270,29 +270,34 @@ export function TournamentMonitor() {
             >
               Level {clock.level?.level ?? 0}
             </div>
-            {/* Blinds centered. The ante sits below them as a quiet
-                annotation — keeps the big number perfectly centered without
-                fighting absolute positioning at every viewport size. */}
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={clock.levelIndex}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="font-display leading-none text-brass-shine mt-2"
-                style={{ fontSize: 'clamp(4rem, 22vmin, 18rem)' }}
-              >
-                {clock.level ? `${clock.level.sb}/${clock.level.bb}` : '🏁'}
-              </motion.div>
-            </AnimatePresence>
-            {clock.level?.ante ? (
-              <div
-                className="font-sans text-ink-400 lowercase tracking-wide mt-1"
-                style={{ fontSize: 'clamp(0.95rem, 2.6vmin, 1.5rem)' }}
-              >
-                ante {clock.level.ante}
+            {/* Blinds stay perfectly centered on the screen. The ante hangs
+                off the *right edge of the blinds element itself* via an
+                absolute child of an inline-block wrapper — so the centered
+                blinds aren't pulled off-center by the ante's width. */}
+            <div className="text-center mt-2">
+              <div className="relative inline-block align-baseline">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={clock.levelIndex}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="font-display leading-none text-brass-shine"
+                    style={{ fontSize: 'clamp(4rem, 22vmin, 18rem)' }}
+                  >
+                    {clock.level ? `${clock.level.sb}/${clock.level.bb}` : '🏁'}
+                  </motion.div>
+                </AnimatePresence>
+                {clock.level?.ante ? (
+                  <span
+                    className="absolute left-full bottom-[0.15em] ml-2 sm:ml-3 font-sans text-ink-400 lowercase tracking-wide whitespace-nowrap"
+                    style={{ fontSize: 'clamp(0.85rem, 2.4vmin, 1.4rem)' }}
+                  >
+                    ante {clock.level.ante}
+                  </span>
+                ) : null}
               </div>
-            ) : null}
+            </div>
             <motion.div
               className="font-mono leading-none mt-4 tabular-nums"
               style={{ fontSize: 'clamp(6rem, 50vmin, 32rem)' }}
@@ -347,26 +352,30 @@ export function TournamentMonitor() {
             >
               Level {clock.level?.level ?? 0}
             </div>
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={clock.levelIndex}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="font-display leading-none text-brass-shine mt-1"
-                style={{ fontSize: 'clamp(2.75rem, 14vmin, 11rem)' }}
-              >
-                {clock.level ? `${clock.level.sb}/${clock.level.bb}` : '🏁'}
-              </motion.div>
-            </AnimatePresence>
-            {clock.level?.ante ? (
-              <div
-                className="font-sans text-ink-400 lowercase tracking-wide mt-1"
-                style={{ fontSize: 'clamp(0.8rem, 2.2vmin, 1.2rem)' }}
-              >
-                ante {clock.level.ante}
+            <div className="text-center mt-1">
+              <div className="relative inline-block align-baseline">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={clock.levelIndex}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="font-display leading-none text-brass-shine"
+                    style={{ fontSize: 'clamp(2.75rem, 14vmin, 11rem)' }}
+                  >
+                    {clock.level ? `${clock.level.sb}/${clock.level.bb}` : '🏁'}
+                  </motion.div>
+                </AnimatePresence>
+                {clock.level?.ante ? (
+                  <span
+                    className="absolute left-full bottom-[0.15em] ml-1.5 sm:ml-2 font-sans text-ink-400 lowercase tracking-wide whitespace-nowrap"
+                    style={{ fontSize: 'clamp(0.7rem, 2vmin, 1.1rem)' }}
+                  >
+                    ante {clock.level.ante}
+                  </span>
+                ) : null}
               </div>
-            ) : null}
+            </div>
             <motion.div
               className="font-mono leading-none mt-3 tabular-nums"
               style={{ fontSize: 'clamp(4.5rem, 24vmin, 18rem)' }}

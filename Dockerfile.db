@@ -18,5 +18,6 @@ COPY supabase/migrations/10-auto-advance.sql /docker-entrypoint-initdb.d/zz-10-a
 COPY supabase/migrations/11-admin-delete-member.sql /docker-entrypoint-initdb.d/zz-11-admin-delete-member.sql
 COPY supabase/migrations/12-promote-guest.sql /docker-entrypoint-initdb.d/zz-12-promote-guest.sql
 COPY supabase/migrations/13-spectator-readonly.sql /docker-entrypoint-initdb.d/zz-13-spectator-readonly.sql
+COPY supabase/migrations/14-tighten-admin-rpcs.sql /docker-entrypoint-initdb.d/zz-14-tighten-admin-rpcs.sql
 
 RUN chmod +x /docker-entrypoint-initdb.d/zz-00-roles.sh

@@ -30,7 +30,10 @@ export function Bank() {
   const [openAccount, setOpenAccount] = useState<AccountRow | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
-  const [draftProfile, setDraftProfile] = useState<string>('');
+  const [recentGuests, setRecentGuests] = useState<string[]>([]);
+  // draftSel encoding: '' = new guest (free-text), 'p:<uuid>' = registered member,
+  // 'g:<name>' = past guest. Lets one <select> drive both kinds.
+  const [draftSel, setDraftSel] = useState<string>('');
   const [draftGuest, setDraftGuest] = useState('');
   const [draftAmount, setDraftAmount] = useState(0);
   const [draftKind, setDraftKind] = useState<'manual_deposit' | 'manual_withdrawal'>('manual_deposit');
@@ -38,15 +41,29 @@ export function Bank() {
 
   useEffect(() => {
     const load = async () => {
-      const [{ data: bals }, { data: txs }, { data: profs }] = await Promise.all([
+      const [{ data: bals }, { data: txs }, { data: profs }, { data: tps }, { data: cps }] = await Promise.all([
         supabase.from('bank_balances').select('*').order('balance', { ascending: false }),
         supabase.from('bank_transactions').select('*').order('created_at', { ascending: false }).limit(15),
         supabase.from('profiles').select('*').order('display_name'),
+        supabase.from('tournament_players').select('guest_name').not('guest_name', 'is', null),
+        supabase.from('cash_game_players').select('guest_name').not('guest_name', 'is', null),
       ]);
       setBalances((bals ?? []) as BankBalance[]);
       setRecentTx((txs ?? []) as BankTransaction[]);
       setAllProfiles((profs ?? []) as Profile[]);
       setProfileMap(Object.fromEntries((profs ?? []).map((p) => [p.id, p as Profile])));
+
+      // Past guest names — every guest_name ever attached to a player row.
+      // Dedupe case-insensitively, keep the original casing of the first hit
+      // so we don't surface "lars" / "Lars" / "LARS" as separate entries.
+      const seen = new Map<string, string>();
+      for (const r of [...(tps ?? []), ...(cps ?? [])]) {
+        const raw = ((r as { guest_name: string }).guest_name ?? '').trim();
+        if (!raw) continue;
+        const key = raw.toLowerCase();
+        if (!seen.has(key)) seen.set(key, raw);
+      }
+      setRecentGuests(Array.from(seen.values()).sort((a, b) => a.localeCompare(b)));
     };
     load();
     const ch = supabase.channel(`bank:${crypto.randomUUID()}`).on('postgres_changes',
@@ -77,8 +94,11 @@ export function Bank() {
 
   const submitTx = async () => {
     if (!draftAmount) return;
-    const profile_id = draftProfile || undefined;
-    const guest_name = !profile_id && draftGuest.trim() ? draftGuest.trim() : undefined;
+    let profile_id: string | undefined;
+    let guest_name: string | undefined;
+    if (draftSel.startsWith('p:')) profile_id = draftSel.slice(2);
+    else if (draftSel.startsWith('g:')) guest_name = draftSel.slice(2);
+    else if (draftGuest.trim()) guest_name = draftGuest.trim();
     if (!profile_id && !guest_name) return;
     const signed = draftKind === 'manual_deposit' ? Math.abs(draftAmount) : -Math.abs(draftAmount);
     await recordBankTx({
@@ -93,7 +113,7 @@ export function Bank() {
     setDraftAmount(0);
     setDraftNote('');
     setDraftGuest('');
-    setDraftProfile('');
+    setDraftSel('');
   };
 
   return (
@@ -192,15 +212,28 @@ export function Bank() {
             <p className="label">Account holder</p>
             <select
               className="input"
-              value={draftProfile}
-              onChange={(e) => { setDraftProfile(e.target.value); setDraftGuest(''); }}
+              value={draftSel}
+              onChange={(e) => { setDraftSel(e.target.value); setDraftGuest(''); }}
             >
-              <option value="">— guest —</option>
-              {allProfiles.map((p) => (
-                <option key={p.id} value={p.id}>{p.display_name}</option>
-              ))}
+              <option value="">— new guest —</option>
+              {allProfiles.length > 0 && (
+                <optgroup label="Members">
+                  {allProfiles.map((p) => (
+                    <option key={p.id} value={`p:${p.id}`}>
+                      {(p.avatar_emoji ?? '🃏') + ' ' + p.display_name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {recentGuests.length > 0 && (
+                <optgroup label="Past guests">
+                  {recentGuests.map((n) => (
+                    <option key={n} value={`g:${n}`}>👤 {n}</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
-            {!draftProfile && (
+            {draftSel === '' && (
               <Input className="mt-2" placeholder="Guest name (e.g. Lars)" value={draftGuest}
                 onChange={(e) => setDraftGuest(e.target.value)} />
             )}
@@ -209,7 +242,11 @@ export function Bank() {
             onValueChange={setDraftAmount} />
           <Input label="Note (optional)" value={draftNote}
             onChange={(e) => setDraftNote(e.target.value)} placeholder="e.g. paid in cash on arrival" />
-          <Button full onClick={submitTx} disabled={!draftAmount || (!draftProfile && !draftGuest.trim())}>
+          <Button
+            full
+            onClick={submitTx}
+            disabled={!draftAmount || (draftSel === '' && !draftGuest.trim())}
+          >
             Record {draftKind === 'manual_deposit' ? '+' : '−'}{formatMoney(Math.abs(draftAmount), currency)}
           </Button>
         </div>

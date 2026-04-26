@@ -13,13 +13,13 @@ import { useSeason } from '@/store/season';
 
 export function CashGameNew() {
   const { user } = useAuth();
-  const { currency } = useSettings();
+  const { currency, cashDefaults } = useSettings();
   const { activeSeasonId, setActiveSeasonId } = useSeason();
   const navigate = useNavigate();
   const toast = useToast();
   const [name, setName] = useState(`Cash game ${new Date().toLocaleDateString('nb-NO')}`);
-  const [sb, setSb] = useState(5);
-  const [bb, setBb] = useState(10);
+  const [sb, setSb] = useState(cashDefaults.smallBlind);
+  const [bb, setBb] = useState(cashDefaults.bigBlind);
   const [busy, setBusy] = useState(false);
 
   const create = async () => {

@@ -29,6 +29,16 @@ export const DEFAULT_TOURNAMENT_DEFAULTS: TournamentDefaults = {
   tournamentType: 'rebuy',
 };
 
+export interface CashDefaults {
+  smallBlind: number;
+  bigBlind: number;
+}
+
+export const DEFAULT_CASH_DEFAULTS: CashDefaults = {
+  smallBlind: 2,
+  bigBlind: 4,
+};
+
 interface SettingsState {
   currency: string;
   inventory: ChipInventory;
@@ -37,6 +47,7 @@ interface SettingsState {
   language: Lang;
   largeText: boolean;
   tournamentDefaults: TournamentDefaults;
+  cashDefaults: CashDefaults;
   setCurrency: (c: string) => void;
   setInventory: (inv: ChipInventory) => void;
   toggleSound: () => void;
@@ -44,6 +55,7 @@ interface SettingsState {
   setLanguage: (l: Lang) => void;
   toggleLargeText: () => void;
   setTournamentDefaults: (d: TournamentDefaults) => void;
+  setCashDefaults: (d: CashDefaults) => void;
 }
 
 export const useSettings = create<SettingsState>()(
@@ -56,6 +68,7 @@ export const useSettings = create<SettingsState>()(
       language: 'no' as Lang,
       largeText: false,
       tournamentDefaults: DEFAULT_TOURNAMENT_DEFAULTS,
+      cashDefaults: DEFAULT_CASH_DEFAULTS,
       setCurrency: (c) => set({ currency: c }),
       setInventory: (inv) => set({ inventory: inv }),
       toggleSound: () => {
@@ -69,6 +82,7 @@ export const useSettings = create<SettingsState>()(
       },
       setLanguage: (l) => set({ language: l }),
       setTournamentDefaults: (d) => set({ tournamentDefaults: d }),
+      setCashDefaults: (d) => set({ cashDefaults: d }),
       toggleLargeText: () => {
         const next = !get().largeText;
         set({ largeText: next });
