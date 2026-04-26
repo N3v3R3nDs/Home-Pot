@@ -10,6 +10,7 @@ import { useSettings } from '@/store/settings';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { NumberInput } from '@/components/ui/NumberInput';
 import { Sheet } from '@/components/ui/Sheet';
 import { useConfirm } from '@/components/ui/Confirm';
 import { useUndo } from '@/components/ui/Undo';
@@ -465,6 +466,31 @@ export function TournamentLive() {
           <Button variant="ghost" onClick={() => advanceLevel(-1)} disabled={clock.levelIndex === 0}>◀ {t('level')}</Button>
           <Button variant="ghost" onClick={() => advanceLevel(1)}>{t('level')} ▶</Button>
         </div>
+        {/* Quick auto-advance toggle right under the level controls so it's
+            findable without diving into the admin sheet. */}
+        <button
+          onClick={async () => {
+            const next = !tournament.auto_advance;
+            patchTournament({ auto_advance: next });
+            await supabase.from('tournaments').update({ auto_advance: next }).eq('id', tournament.id);
+          }}
+          className={`mt-3 w-full flex items-center justify-between rounded-xl border px-4 py-2.5 transition ${
+            tournament.auto_advance
+              ? 'bg-brass-500/15 border-brass-500/50 text-brass-100'
+              : 'bg-felt-900/60 border-felt-700 text-ink-200'
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            <span className="text-base">{tournament.auto_advance ? '⏭' : '✋'}</span>
+            <span>
+              <div className="font-semibold text-sm text-left">{t('autoAdvance')}</div>
+              <div className="text-[10px] text-ink-400 text-left">{t('autoAdvanceHint')}</div>
+            </span>
+          </span>
+          <span className={`w-11 h-6 rounded-full relative shrink-0 transition ${tournament.auto_advance ? 'bg-brass-500' : 'bg-felt-700'}`}>
+            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${tournament.auto_advance ? 'left-[1.4rem]' : 'left-0.5'}`} />
+          </span>
+        </button>
       </Card>
 
       {/* Money */}
@@ -625,19 +651,21 @@ export function TournamentLive() {
                   }}
                   className="w-12 h-12 rounded-xl bg-felt-800 text-2xl"
                 >−</button>
-                <input
-                  type="number"
-                  value={editPosDraft}
-                  min={1}
-                  onChange={(e) => {
-                    const n = Math.max(1, Number(e.target.value));
-                    setEditPosDraft(n);
-                    if (!prizeManuallyEdited) {
-                      setEditPrizeDraft(payouts.find((x) => x.place === n)?.percent ?? 0);
-                    }
-                  }}
-                  className="input text-center font-mono text-2xl flex-1"
-                />
+                <div className="flex-1">
+                  <NumberInput
+                    value={editPosDraft}
+                    min={1}
+                    required
+                    onValueChange={(n) => {
+                      const v = Math.max(1, n);
+                      setEditPosDraft(v);
+                      if (!prizeManuallyEdited) {
+                        setEditPrizeDraft(payouts.find((x) => x.place === v)?.percent ?? 0);
+                      }
+                    }}
+                    className="text-center font-mono text-2xl"
+                  />
+                </div>
                 <button
                   onClick={() => {
                     setEditPosDraft((v) => v + 1);
@@ -664,12 +692,12 @@ export function TournamentLive() {
                   >reset to auto</button>
                 )}
               </label>
-              <Input
-                type="number"
+              <NumberInput
                 value={editPrizeDraft}
                 suffix={currency}
-                onChange={(e) => {
-                  setEditPrizeDraft(Number(e.target.value));
+                min={0}
+                onValueChange={(n) => {
+                  setEditPrizeDraft(n);
                   setPrizeManuallyEdited(true);
                 }}
               />
@@ -862,22 +890,8 @@ export function TournamentLive() {
               </select>
             </div>
           )}
-          <button
-            onClick={async () => {
-              const next = !tournament.auto_advance;
-              patchTournament({ auto_advance: next });
-              await supabase.from('tournaments').update({ auto_advance: next }).eq('id', tournament.id);
-            }}
-            className="w-full flex items-center justify-between rounded-xl border px-4 py-3 bg-felt-900/60 border-felt-700 text-ink-100"
-          >
-            <span>
-              <div className="font-semibold text-sm text-left">{t('autoAdvance')}</div>
-              <div className="text-[11px] text-ink-400 text-left">{t('autoAdvanceHint')}</div>
-            </span>
-            <span className={`w-12 h-7 rounded-full relative ${tournament.auto_advance ? 'bg-brass-500' : 'bg-felt-700'}`}>
-              <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white transition ${tournament.auto_advance ? 'left-5' : 'left-0.5'}`} />
-            </span>
-          </button>
+          {/* Auto-advance is now a prominent toggle right under the timer
+              card on the live screen — no longer duplicated in this sheet. */}
           <Button variant="ghost" full onClick={cloneTournament}>
             {t('cloneForNextTime')}
           </Button>

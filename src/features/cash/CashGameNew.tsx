@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { NumberInput } from '@/components/ui/NumberInput';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/store/auth';
 import { useSettings } from '@/store/settings';
@@ -76,10 +77,8 @@ export function CashGameNew() {
       <Card className="space-y-4">
         <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} />
         <div className="grid grid-cols-2 gap-3">
-          <Input label="Small blind" type="number" value={sb} suffix={currency}
-            onChange={(e) => setSb(Number(e.target.value))} />
-          <Input label="Big blind" type="number" value={bb} suffix={currency}
-            onChange={(e) => setBb(Number(e.target.value))} />
+          <NumberInput label="Small blind" value={sb} suffix={currency} min={0} required onValueChange={setSb} />
+          <NumberInput label="Big blind" value={bb} suffix={currency} min={0} required onValueChange={setBb} />
         </div>
         <Button full onClick={create} disabled={busy}>{busy ? 'Creating…' : 'Start cash game'}</Button>
       </Card>

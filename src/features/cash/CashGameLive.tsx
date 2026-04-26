@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { NumberInput } from '@/components/ui/NumberInput';
 import { Sheet } from '@/components/ui/Sheet';
 import { useConfirm } from '@/components/ui/Confirm';
 import { useToast } from '@/components/ui/Toast';
@@ -477,12 +478,12 @@ export function CashGameLive() {
         onClose={() => { setSeatingFor(null); setSeatFromBank(false); }}
         title={seatingFor ? `Buy-in for ${seatingFor.name}` : ''}
       >
-        <Input
+        <NumberInput
           label="Buy-in amount"
-          type="number"
           value={seatAmount}
           suffix={currency}
-          onChange={(e) => setSeatAmount(Number(e.target.value))}
+          min={0}
+          onValueChange={setSeatAmount}
         />
         <div className="mt-2 flex flex-wrap gap-1.5">
           {[200, 500, 1000, 1500, 2000].map((preset) => (
@@ -508,16 +509,16 @@ export function CashGameLive() {
 
       <Sheet open={!!topUpFor} onClose={() => { setTopUpFor(null); setTopUpFromBank(false); }}
         title={topUpFor ? `Buy-in for ${playerName(topUpFor)}` : ''}>
-        <Input label="Amount" type="number" value={topUpAmount} suffix={currency}
-          onChange={(e) => setTopUpAmount(Number(e.target.value))} />
+        <NumberInput label="Amount" value={topUpAmount} suffix={currency} min={0}
+          onValueChange={setTopUpAmount} />
         <BankToggle on={topUpFromBank} setOn={setTopUpFromBank} mode="from" amount={topUpAmount} currency={currency} />
         <Button full onClick={topUp} className="mt-4">Add buy-in{topUpFromBank ? ' · from 🏦' : ''}</Button>
       </Sheet>
 
       <Sheet open={!!cashOutFor} onClose={() => { setCashOutFor(null); setLeaveInBank(false); }}
         title={cashOutFor ? `Cash out ${playerName(cashOutFor)}` : ''}>
-        <Input label="Stack value at cash-out" type="number" value={cashOutAmount} suffix={currency}
-          onChange={(e) => setCashOutAmount(Number(e.target.value))} />
+        <NumberInput label="Stack value at cash-out" value={cashOutAmount} suffix={currency} min={0}
+          onValueChange={setCashOutAmount} />
         <BankToggle on={leaveInBank} setOn={setLeaveInBank} mode="to" amount={cashOutAmount} currency={currency} />
         <Button full onClick={cashOut} className="mt-4">Cash out{leaveInBank ? ' · leave in 🏦' : ''}</Button>
       </Sheet>

@@ -35,7 +35,9 @@ export function TournamentMonitor() {
   const orientation = useOrientation();
   useRedirectOnOrientation('portrait', id ? `/tournament/${id}` : '');
   useAutoFullscreen();
-  const [hideQr, setHideQr] = useState(false);
+  // QR hidden by default — it covers a corner and looks busy. Host taps the
+  // toggle in the header when they actually want latecomers to scan in.
+  const [hideQr, setHideQr] = useState(true);
 
   // In fullscreen mode (or landscape on a smaller viewport) we want the
   // cleanest possible "broadcast" feel — no nav, no chrome, big numbers.
@@ -213,22 +215,14 @@ export function TournamentMonitor() {
             <span className="pill bg-felt-800/70 border border-felt-700 hidden sm:inline-flex">
               {tournament.state.toUpperCase()}
             </span>
-            <button
-              onClick={async () => {
-                await supabase.from('tournaments').update({ auto_advance: !tournament.auto_advance }).eq('id', tournament.id);
-              }}
-              className={`w-9 h-9 grid place-items-center rounded-full border ${
-                tournament.auto_advance
-                  ? 'bg-brass-500/20 border-brass-500/40 text-brass-100'
-                  : 'bg-felt-800/70 border-felt-700 text-ink-300'
-              }`}
-              title={tournament.auto_advance ? 'Auto-advance ON (tap to disable)' : 'Auto-advance OFF (tap to enable)'}
-            >{tournament.auto_advance ? '⏭' : '✋'}</button>
+            {/* Monitor is broadcast-only — controls (auto-advance, pause,
+                level ◀/▶) live in the vertical/Live view. We keep just the
+                two display affordances: QR toggle and fullscreen. */}
             <button
               onClick={() => setHideQr((v) => !v)}
               className="w-9 h-9 grid place-items-center rounded-full bg-felt-800/70 border border-felt-700 text-ink-200"
-              title={hideQr ? 'Show QR' : 'Hide QR'}
-            >{hideQr ? '◫' : '⊟'}</button>
+              title={hideQr ? 'Show join QR' : 'Hide join QR'}
+            >{hideQr ? '📲' : '🚫'}</button>
             <button
               onClick={toggleFullscreen}
               className="w-9 h-9 grid place-items-center rounded-full bg-brass-500/20 border border-brass-500/40 text-brass-100"

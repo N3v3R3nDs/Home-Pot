@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { haptic } from '@/lib/haptics';
+import { blindUpSound } from '@/lib/sounds';
+import { useSettings } from '@/store/settings';
 
 interface LevelUpFanfareProps {
   /** Current level number; the fanfare fires whenever this changes (after first mount). */
@@ -23,6 +25,7 @@ interface LevelUpFanfareProps {
 export function LevelUpFanfare({ levelNumber, blindsLabel, ante, silent, intensity = 'soft' }: LevelUpFanfareProps) {
   const lastLevelRef = useRef<number | null>(null);
   const [active, setActive] = useState(false);
+  const soundEnabled = useSettings((s) => s.soundEnabled);
 
   useEffect(() => {
     if (lastLevelRef.current === null) {
@@ -35,9 +38,10 @@ export function LevelUpFanfare({ levelNumber, blindsLabel, ante, silent, intensi
 
     setActive(true);
     haptic('success');
+    if (soundEnabled) blindUpSound();
     const timeout = setTimeout(() => setActive(false), 1700);
     return () => clearTimeout(timeout);
-  }, [levelNumber, silent]);
+  }, [levelNumber, silent, soundEnabled]);
 
   const particleCount = intensity === 'epic' ? 24 : 14;
 

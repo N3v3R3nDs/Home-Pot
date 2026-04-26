@@ -6,6 +6,7 @@ import { useSettings } from '@/store/settings';
 import { useSeason } from '@/store/season';
 import type { Season } from '@/types/db';
 import { formatMoney } from '@/lib/format';
+import { NumberInput } from '@/components/ui/NumberInput';
 import { useConfirm } from '@/components/ui/Confirm';
 import { useToast } from '@/components/ui/Toast';
 import { StatsCharts } from './Charts';
@@ -490,27 +491,24 @@ export function History() {
                           const name = p.profile_id ? profileMap[p.profile_id]?.display_name ?? '…' : (p.guest_name ?? 'Guest');
                           return (
                             <div key={p.id} className="flex items-center gap-2">
-                              <input
-                                type="number"
-                                min={1}
-                                value={posDraft[p.id] ?? ''}
-                                placeholder="—"
-                                onChange={(e) => {
-                                  const raw = e.target.value;
-                                  setPosDraft({ ...posDraft, [p.id]: raw === '' ? null : Math.max(1, Number(raw)) });
-                                }}
-                                className="input !py-1.5 !px-2 w-14 text-center font-mono text-xs"
-                                title="Finishing position"
-                              />
+                              <div className="w-14">
+                                <NumberInput
+                                  value={posDraft[p.id] ?? 0}
+                                  min={0}
+                                  placeholder="—"
+                                  onValueChange={(n) => setPosDraft({ ...posDraft, [p.id]: n === 0 ? null : n })}
+                                  className="!py-1.5 !px-2 text-center font-mono text-xs"
+                                />
+                              </div>
                               <span className="flex-1 text-sm truncate">{name}</span>
-                              <input
-                                type="number"
-                                min={0}
-                                value={prizeDraft[p.id] ?? 0}
-                                onChange={(e) => setPrizeDraft({ ...prizeDraft, [p.id]: Number(e.target.value) })}
-                                className="input !py-1.5 !px-2 w-28 text-right font-mono text-sm"
-                                title="Prize amount"
-                              />
+                              <div className="w-28">
+                                <NumberInput
+                                  value={prizeDraft[p.id] ?? 0}
+                                  min={0}
+                                  onValueChange={(n) => setPrizeDraft({ ...prizeDraft, [p.id]: n })}
+                                  className="!py-1.5 !px-2 text-right font-mono text-sm"
+                                />
+                              </div>
                             </div>
                           );
                         })}

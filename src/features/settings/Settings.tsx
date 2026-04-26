@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
+import { NumberInput } from '@/components/ui/NumberInput';
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
 import { useConfirm } from '@/components/ui/Confirm';
@@ -189,21 +190,21 @@ export function Settings() {
           ))}
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <Input label="Buy-in" type="number" value={defDraft.buyIn} suffix={currency}
-            onChange={(e) => setDefDraft({ ...defDraft, buyIn: Number(e.target.value) })} />
-          <Input label="Bounty" type="number" value={defDraft.bountyAmount} suffix={currency}
-            onChange={(e) => setDefDraft({ ...defDraft, bountyAmount: Number(e.target.value) })} />
-          <Input label="Re-buy" type="number" value={defDraft.rebuyAmount} suffix={currency}
-            onChange={(e) => setDefDraft({ ...defDraft, rebuyAmount: Number(e.target.value) })} />
-          <Input label="Add-on" type="number" value={defDraft.addonAmount} suffix={currency}
-            onChange={(e) => setDefDraft({ ...defDraft, addonAmount: Number(e.target.value) })} />
-          <Input label="Re-buys until level" type="number" value={defDraft.rebuysUntilLevel}
-            onChange={(e) => setDefDraft({ ...defDraft, rebuysUntilLevel: Number(e.target.value) })} />
+          <NumberInput label="Buy-in" value={defDraft.buyIn} suffix={currency} min={0} required
+            onValueChange={(n) => setDefDraft({ ...defDraft, buyIn: n })} />
+          <NumberInput label="Bounty" value={defDraft.bountyAmount} suffix={currency} min={0}
+            onValueChange={(n) => setDefDraft({ ...defDraft, bountyAmount: n })} />
+          <NumberInput label="Re-buy" value={defDraft.rebuyAmount} suffix={currency} min={0}
+            onValueChange={(n) => setDefDraft({ ...defDraft, rebuyAmount: n })} />
+          <NumberInput label="Add-on" value={defDraft.addonAmount} suffix={currency} min={0}
+            onValueChange={(n) => setDefDraft({ ...defDraft, addonAmount: n })} />
+          <NumberInput label="Re-buys until level" value={defDraft.rebuysUntilLevel} min={0}
+            onValueChange={(n) => setDefDraft({ ...defDraft, rebuysUntilLevel: n })} />
           <div /> {/* spacer to keep next row aligned */}
-          <Input label="Rake %" type="number" value={defDraft.rakePercent} suffix="%"
-            onChange={(e) => setDefDraft({ ...defDraft, rakePercent: Number(e.target.value) })} />
-          <Input label="Dealer tip %" type="number" value={defDraft.dealerTipPercent} suffix="%"
-            onChange={(e) => setDefDraft({ ...defDraft, dealerTipPercent: Number(e.target.value) })} />
+          <NumberInput label="Rake %" value={defDraft.rakePercent} suffix="%" min={0} max={100} decimals
+            onValueChange={(n) => setDefDraft({ ...defDraft, rakePercent: n })} />
+          <NumberInput label="Dealer tip %" value={defDraft.dealerTipPercent} suffix="%" min={0} max={100} decimals
+            onValueChange={(n) => setDefDraft({ ...defDraft, dealerTipPercent: n })} />
         </div>
         <Button full className="mt-3" onClick={saveDefaults}>
           {defSavedAt ? '✓ Saved' : 'Save defaults'}
@@ -272,11 +273,11 @@ export function Settings() {
           {DENOMINATIONS.map((d) => (
             <div key={d} className="bg-felt-950/60 rounded-xl p-3 flex flex-col items-center gap-2">
               <Chip denom={d} size="md" />
-              <input
-                type="number"
-                className="input !px-2 !py-1 text-center font-mono w-full"
+              <NumberInput
+                className="!px-2 !py-1 text-center font-mono"
                 value={invDraft[d]}
-                onChange={(e) => setInvDraft({ ...invDraft, [d]: Math.max(0, Number(e.target.value)) })}
+                min={0}
+                onValueChange={(n) => setInvDraft({ ...invDraft, [d]: n })}
               />
             </div>
           ))}

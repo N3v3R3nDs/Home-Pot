@@ -44,7 +44,8 @@ export function MonitorBody({ cashGameId, spectator = false }: MonitorBodyProps)
   const orientation = useOrientation();
   useAutoFullscreen();
   const t = useT();
-  const [hideQr, setHideQr] = useState(false);
+  // QR hidden by default; tap the 📲 button to show for latecomers.
+  const [hideQr, setHideQr] = useState(true);
 
   // Sound cues — fire on count changes (new buy-in / new cash-out). Refs
   // hold the previous count so we only chime on a true *increase* and not
@@ -231,7 +232,7 @@ export function MonitorBody({ cashGameId, spectator = false }: MonitorBodyProps)
               onClick={() => setHideQr((v) => !v)}
               className="w-9 h-9 grid place-items-center rounded-full bg-felt-800/70 border border-felt-700 text-ink-200"
               title={hideQr ? t('showQr') : t('hideQr')}
-            >{hideQr ? '◫' : '⊟'}</button>
+            >{hideQr ? '📲' : '🚫'}</button>
             <button
               onClick={toggleFullscreen}
               className="w-9 h-9 grid place-items-center rounded-full bg-brass-500/20 border border-brass-500/40 text-brass-100"

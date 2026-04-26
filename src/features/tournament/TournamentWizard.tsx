@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { NumberInput } from '@/components/ui/NumberInput';
 import { Card } from '@/components/ui/Card';
 import { Chip } from '@/components/Chip';
 import { useAuth } from '@/store/auth';
@@ -258,7 +259,21 @@ export function TournamentWizard() {
               ] as const).map(([id, label, ico]) => (
                 <button
                   key={id}
-                  onClick={() => setTournamentType(id)}
+                  onClick={() => {
+                    setTournamentType(id);
+                    // Sensible per-format defaults: rebuy means no add-on,
+                    // freezeout zeroes both rebuy + add-on, bounty enables
+                    // a default bounty if there isn't one yet, reentry leaves
+                    // the rebuy field as the entry refresh amount.
+                    if (id === 'rebuy') {
+                      setAddonAmount(0);
+                    } else if (id === 'freezeout') {
+                      setRebuyAmount(0);
+                      setAddonAmount(0);
+                    } else if (id === 'bounty' && bountyAmount === 0) {
+                      setBountyAmount(Math.max(50, Math.round(buyIn * 0.25)));
+                    }
+                  }}
                   className={`p-2 rounded-xl border text-center text-xs ${
                     tournamentType === id ? 'bg-brass-500/15 border-brass-500/50 text-brass-100' : 'bg-felt-900/60 border-felt-700 text-ink-300'
                   }`}
@@ -271,23 +286,27 @@ export function TournamentWizard() {
           </div>
           <Input label={t('tournamentName')} value={name} onChange={(e) => setName(e.target.value)} />
           <div className="grid grid-cols-2 gap-3">
-            <Input label={t('buyIn')} type="number" value={buyIn} suffix={currency}
-              onChange={(e) => setBuyIn(Number(e.target.value))} />
-            <Input label={t('bounty')} type="number" value={bountyAmount} suffix={currency}
-              onChange={(e) => setBountyAmount(Number(e.target.value))}
-              hint={t('bountyHint')} />
-            <Input label={t('rebuy')} type="number" value={rebuyAmount} suffix={currency}
-              onChange={(e) => setRebuyAmount(Number(e.target.value))} />
-            <Input label={t('addon')} type="number" value={addonAmount} suffix={currency}
-              onChange={(e) => setAddonAmount(Number(e.target.value))} />
-            <Input label={t('rebuysUntilLevel')} type="number" value={rebuysUntilLevel}
-              onChange={(e) => setRebuysUntilLevel(Number(e.target.value))} />
-            <Input label={t('rakePercent')} type="number" value={rakePercent} suffix="%"
-              onChange={(e) => setRakePercent(Number(e.target.value))}
-              hint={t('rakeHint')} />
-            <Input label={t('dealerTipPercent')} type="number" value={dealerTipPercent} suffix="%"
-              onChange={(e) => setDealerTipPercent(Number(e.target.value))}
-              hint={t('dealerTipHint')} />
+            <NumberInput label={t('buyIn')} value={buyIn} suffix={currency} min={0} required onValueChange={setBuyIn} />
+            {tournamentType === 'bounty' && (
+              <NumberInput label={t('bounty')} value={bountyAmount} suffix={currency} min={0}
+                onValueChange={setBountyAmount} hint={t('bountyHint')} />
+            )}
+            {(tournamentType === 'rebuy' || tournamentType === 'reentry') && (
+              <NumberInput label={t('rebuy')} value={rebuyAmount} suffix={currency} min={0}
+                onValueChange={setRebuyAmount} />
+            )}
+            {tournamentType !== 'rebuy' && tournamentType !== 'freezeout' && (
+              <NumberInput label={t('addon')} value={addonAmount} suffix={currency} min={0}
+                onValueChange={setAddonAmount} />
+            )}
+            {(tournamentType === 'rebuy' || tournamentType === 'reentry') && (
+              <NumberInput label={t('rebuysUntilLevel')} value={rebuysUntilLevel} min={0}
+                onValueChange={setRebuysUntilLevel} />
+            )}
+            <NumberInput label={t('rakePercent')} value={rakePercent} suffix="%" min={0} max={100} decimals
+              onValueChange={setRakePercent} hint={t('rakeHint')} />
+            <NumberInput label={t('dealerTipPercent')} value={dealerTipPercent} suffix="%" min={0} max={100} decimals
+              onValueChange={setDealerTipPercent} hint={t('dealerTipHint')} />
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={saveAsTemplate}>{t('saveAsTemplate')}</Button>
@@ -473,10 +492,11 @@ export function TournamentWizard() {
 
           <Card>
             <p className="label">Starting stack</p>
-            <Input
-              type="number"
+            <NumberInput
               value={effectiveStack}
-              onChange={(e) => setStackSize(Number(e.target.value))}
+              onValueChange={setStackSize}
+              min={0}
+              required
               suffix="chips"
               hint={`Inventory holds ${formatChips(totalChipValue(inventory))} total chip value across all chips.`}
             />

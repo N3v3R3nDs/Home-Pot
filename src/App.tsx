@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from '@/store/auth';
 import { useSettings } from '@/store/settings';
-import { setMuted } from '@/lib/sounds';
+import { setMuted, bindAudioUnlock } from '@/lib/sounds';
 import { Layout } from '@/components/Layout';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ConfirmProvider } from '@/components/ui/Confirm';
@@ -46,6 +46,10 @@ export default function App() {
   useEffect(() => {
     setMuted(!soundEnabled);
   }, [soundEnabled]);
+
+  useEffect(() => {
+    bindAudioUnlock();
+  }, []);
 
   if (loading) {
     return (

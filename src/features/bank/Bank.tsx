@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { NumberInput } from '@/components/ui/NumberInput';
 import { Sheet } from '@/components/ui/Sheet';
 import { supabase } from '@/lib/supabase';
 import { bankAccountKey, recordBankTx, type BankBalance, type BankTransaction } from '@/lib/bank';
@@ -204,8 +205,8 @@ export function Bank() {
                 onChange={(e) => setDraftGuest(e.target.value)} />
             )}
           </div>
-          <Input label="Amount" type="number" value={draftAmount} suffix={currency}
-            onChange={(e) => setDraftAmount(Number(e.target.value))} />
+          <NumberInput label="Amount" value={draftAmount} suffix={currency} min={0}
+            onValueChange={setDraftAmount} />
           <Input label="Note (optional)" value={draftNote}
             onChange={(e) => setDraftNote(e.target.value)} placeholder="e.g. paid in cash on arrival" />
           <Button full onClick={submitTx} disabled={!draftAmount || (!draftProfile && !draftGuest.trim())}>
