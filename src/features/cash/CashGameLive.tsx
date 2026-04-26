@@ -16,6 +16,7 @@ import { useCashGame } from '@/hooks/useCashGame';
 import { useRedirectOnOrientation } from '@/hooks/useFullscreen';
 import { computeSettlements } from './settle';
 import { recordBankTx } from '@/lib/bank';
+import { renderCashShareCard, shareCard } from '@/lib/shareCard';
 import type { CashGamePlayer, Profile } from '@/types/db';
 
 export function CashGameLive() {
@@ -320,7 +321,26 @@ export function CashGameLive() {
 
       {settlements.length > 0 && (
         <Card>
-          <p className="label">Settle up</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="label !mb-0">Settle up</p>
+            <Button
+              variant="ghost"
+              className="!px-3 !py-1.5 text-xs"
+              onClick={async () => {
+                if (!game) return;
+                const blob = await renderCashShareCard({
+                  title: game.name,
+                  totalOnTable,
+                  totalBoughtIn: players.reduce((s, p) => s + (totals[p.id]?.in ?? 0), 0),
+                  settlements,
+                  currency,
+                });
+                await shareCard(blob, `${game.name.replace(/\s+/g, '-')}-settle.png`, `${game.name} — settle up`);
+              }}
+            >
+              📤 Share
+            </Button>
+          </div>
           <ul className="space-y-2">
             {settlements.map((s, i) => {
               // Deep links — works if the recipient has Vipps / Venmo installed.

@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router-dom';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTournament } from '@/hooks/useTournament';
@@ -9,8 +9,16 @@ import { useSettings } from '@/store/settings';
 import { calculatePrizePool, distributePrizes } from './payouts';
 import { formatChips, formatDuration, formatMoney, formatPlace } from '@/lib/format';
 import { requestWakeLock, releaseWakeLock } from '@/lib/wakeLock';
-import { QRCode } from '@/components/QRCode';
 import { useFullscreen, useOrientation, useRedirectOnOrientation, useAutoFullscreen } from '@/hooks/useFullscreen';
+import { AnimatedNumber } from '@/components/AnimatedNumber';
+import { AmbientBackdrop } from '@/components/AmbientBackdrop';
+import { LevelUpFanfare } from '@/components/LevelUpFanfare';
+import { StatusPill } from '@/components/StatusPill';
+import { JoinBadge } from '@/components/JoinBadge';
+import { EmptyStateBadge } from '@/components/EmptyStateBadge';
+import { CelebrationOverlay, type Celebration } from '@/components/CelebrationOverlay';
+import { eliminationSound, finalTableSound, winnerSound } from '@/lib/sounds';
+import { RecapCard } from './RecapCard';
 
 /**
  * The monitor view — designed for a large screen / TV / extra phone propped
@@ -22,7 +30,7 @@ export function TournamentMonitor() {
   const { tournament, players } = useTournament(id);
   const clock = useTournamentClock(tournament);
   useAutoAdvance(tournament, clock.msRemaining);
-  const { currency } = useSettings();
+  const { currency, soundEnabled } = useSettings();
   const { isFullscreen, toggle: toggleFullscreen } = useFullscreen();
   const orientation = useOrientation();
   useRedirectOnOrientation('portrait', id ? `/tournament/${id}` : '');
@@ -80,6 +88,73 @@ export function TournamentMonitor() {
   }, [togglePauseShortcut, advanceShortcut, toggleFullscreen]);
 
   const alive = players.filter((p) => p.eliminated_at === null);
+
+  // Celebration milestones — fire once per transition (first bust, final table,
+  // heads-up, champion). Refs gate against re-fire on remount + realtime echo.
+  const [celebration, setCelebration] = useState<Celebration | null>(null);
+  const lastAliveRef = useRef<number | null>(null);
+  const lastStateRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!tournament || tournament.state === 'setup') {
+      lastAliveRef.current = alive.length;
+      lastStateRef.current = tournament?.state ?? null;
+      return;
+    }
+    const prev = lastAliveRef.current;
+    const total = players.length;
+    if (prev !== null && total > 1) {
+      // First bust
+      if (prev === total && alive.length === total - 1) {
+        setCelebration({
+          id: `first-bust-${Date.now()}`,
+          glyph: '💥',
+          title: 'First blood',
+          subtitle: `${total - 1} of ${total} remain`,
+          tint: 'crimson',
+          durationMs: 2200,
+        });
+        if (soundEnabled) eliminationSound();
+      }
+      // Final table (crossing 9)
+      else if (prev > 9 && alive.length === 9) {
+        setCelebration({
+          id: `final-table-${Date.now()}`,
+          glyph: '🏆',
+          title: 'Final table',
+          subtitle: '9 left · play tightens',
+          durationMs: 2500,
+        });
+        if (soundEnabled) finalTableSound();
+      }
+      // Heads-up (crossing 2)
+      else if (prev > 2 && alive.length === 2) {
+        setCelebration({
+          id: `heads-up-${Date.now()}`,
+          glyph: '⚔️',
+          title: 'Heads-up',
+          subtitle: 'one hand decides it',
+          durationMs: 2500,
+        });
+        if (soundEnabled) finalTableSound();
+      }
+    }
+    lastAliveRef.current = alive.length;
+    // Champion (state → finished)
+    if (lastStateRef.current && lastStateRef.current !== 'finished' && tournament.state === 'finished') {
+      const champ = players.find((p) => p.finishing_position === 1);
+      const champName = champ?.guest_name ?? 'Champion';
+      setCelebration({
+        id: `champ-${Date.now()}`,
+        glyph: '🥇',
+        title: champName,
+        subtitle: 'tournament champion',
+        tint: 'emerald',
+        durationMs: 4000,
+      });
+      if (soundEnabled) winnerSound();
+    }
+    lastStateRef.current = tournament.state;
+  }, [alive.length, players, tournament, soundEnabled]);
   const buyIns = players.reduce((s, p) => s + p.buy_ins, 0);
   const rebuys = players.reduce((s, p) => s + p.rebuys, 0);
   const addons = players.reduce((s, p) => s + p.addons, 0);
@@ -113,16 +188,28 @@ export function TournamentMonitor() {
     ? `${window.location.origin}/tournament/${tournament.id}`
     : '';
 
+  // Fanfare intensity ramps up as we approach the final table.
+  const fanfareIntensity: 'soft' | 'epic' = alive.length <= 9 ? 'epic' : 'soft';
+
   return (
     <div className="fixed inset-0 bg-felt-radial overflow-hidden text-ink-50">
+      <AmbientBackdrop variant="felt" />
+      <CelebrationOverlay celebration={celebration} onDone={() => setCelebration(null)} />
+      <LevelUpFanfare
+        levelNumber={(clock.level?.level ?? 0)}
+        blindsLabel={clock.level ? `${clock.level.sb}/${clock.level.bb}` : ''}
+        ante={clock.level?.ante}
+        intensity={fanfareIntensity}
+      />
       {/* Top bar — sits in flow (not absolute) so it never overlaps content.
           Compact on portrait phones: title truncates, controls icon-only. */}
       {!clean && (
         <header className="absolute top-0 inset-x-0 z-20 flex items-center justify-between gap-2 px-3 sm:px-6 pt-3 pt-safe">
-          <Link to={`/tournament/${tournament.id}`} className="font-display text-lg sm:text-2xl text-brass-shine truncate min-w-0">
+          <Link to={`/tournament/${tournament.id}`} className="font-display text-lg sm:text-2xl text-brass-shine truncate min-w-0 flex items-center gap-2">
             ← {tournament.name}
           </Link>
           <div className="flex items-center gap-1.5 shrink-0">
+            <StatusPill topic={`monitor:${tournament.id}`} />
             <span className="pill bg-felt-800/70 border border-felt-700 hidden sm:inline-flex">
               {tournament.state.toUpperCase()}
             </span>
@@ -166,9 +253,21 @@ export function TournamentMonitor() {
           - Uses vmin so font sizes scale with the *smaller* dimension (height in landscape)
           - min-h-0 / overflow-hidden lets the clock area shrink instead of pushing content off-screen
           - In landscape we shift to a denser side-by-side layout */}
-      {orientation === 'landscape' ? (
+      {tournament.state === 'finished' ? (
+        <div className="absolute inset-0 z-10 grid place-items-center px-4 overflow-y-auto py-8">
+          <RecapCard tournament={tournament} players={players} />
+        </div>
+      ) : tournament.state === 'setup' ? (
+        <div className="absolute inset-0 z-10 grid place-items-center">
+          <EmptyStateBadge
+            glyph="🎰"
+            title="Waiting for the host to start"
+            subtitle={`${players.length} player${players.length === 1 ? '' : 's'} on the roster · the timer kicks off when "Start" is tapped.`}
+          />
+        </div>
+      ) : orientation === 'landscape' ? (
         // ─── LANDSCAPE: clock dominates left, stats stacked on the right ─────
-        <div className={`absolute inset-0 flex gap-3 px-3 py-3 ${clean ? '' : 'pt-14'}`}>
+        <div className={`absolute inset-0 z-10 flex gap-3 px-3 py-3 ${clean ? '' : 'pt-14'}`}>
           {/* Left: clock + blinds (takes most of the width) */}
           <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center">
             <div
@@ -212,9 +311,9 @@ export function TournamentMonitor() {
 
           {/* Right: stats stack + payouts (slim to give the clock more room) */}
           <div className="flex flex-col gap-2 w-[24%] max-w-[320px] min-w-[200px] overflow-hidden">
-            <CompactStat label="Players" value={`${alive.length}/${players.length}`} />
-            <CompactStat label="Avg stack" value={formatChips(avgStack)} />
-            <CompactStat label="Prize pool" value={formatMoney(prizePool, currency)} />
+            <CompactStatNum label="Players" value={alive.length} suffix={`/${players.length}`} />
+            <CompactStatNum label="Avg stack" value={avgStack} format={(n) => formatChips(Math.round(n))} />
+            <CompactStatNum label="Prize pool" value={prizePool} format={(n) => formatMoney(Math.round(n), currency)} />
             <div className="card-felt p-3 flex-1 min-h-0 overflow-y-auto no-scrollbar">
               <div className="uppercase tracking-widest text-ink-400 mb-2" style={{ fontSize: 'clamp(0.6rem, 1.4vmin, 0.85rem)' }}>Payouts</div>
               <ul className="space-y-1.5">
@@ -231,13 +330,13 @@ export function TournamentMonitor() {
       ) : (
         // ─── PORTRAIT: pure flex column. Stats on top, clock fills, payouts
         //               and alive ticker stack at the bottom. No side column. ─
-        <div className={`absolute inset-0 flex flex-col gap-3 px-3 ${clean ? 'py-3' : 'pt-16 pb-3'}`}>
+        <div className={`absolute inset-0 z-10 flex flex-col gap-3 px-3 ${clean ? 'py-3' : 'pt-16 pb-3'}`}>
           {/* Compact 4-col stats — text shrinks to fit narrow phones */}
           <div className="grid grid-cols-4 gap-1.5 shrink-0">
-            <TightStat label="Players" value={`${alive.length}/${players.length}`} />
-            <TightStat label="Avg" value={formatChips(avgStack)} />
-            <TightStat label="Pool" value={formatMoney(prizePool, currency)} />
-            <TightStat label="Chips" value={formatChips(totalChips)} />
+            <TightStatNum label="Players" value={alive.length} suffix={`/${players.length}`} />
+            <TightStatNum label="Avg" value={avgStack} format={(n) => formatChips(Math.round(n))} />
+            <TightStatNum label="Pool" value={prizePool} format={(n) => formatMoney(Math.round(n), currency)} />
+            <TightStatNum label="Chips" value={totalChips} format={(n) => formatChips(Math.round(n))} />
           </div>
 
           {/* Clock fills the available height */}
@@ -373,38 +472,24 @@ export function TournamentMonitor() {
           })()}
       </AnimatePresence>
 
-      {/* JOIN — corner badge. Tiny in both orientations so it never covers the
-          clock or eats into the layout. Tap header "show QR" to toggle. */}
-      {!hideQr && (
-        <div className={`absolute z-10 bottom-2 left-2 flex items-center gap-2 bg-felt-950/85 backdrop-blur-sm border border-felt-700/60 rounded-xl p-1.5 ${
-          clean ? 'opacity-80 hover:opacity-100 transition' : ''
-        }`}>
-          <div className="text-left pl-1">
-            <div className="text-[9px] uppercase tracking-[0.3em] text-brass-300 leading-none">Join</div>
-            <div
-              className="font-display tracking-[0.25em] text-brass-shine leading-none"
-              style={{ fontSize: 'clamp(0.95rem, 3.5vmin, 1.6rem)' }}
-            >
-              {tournament.join_code ?? '—'}
-            </div>
-          </div>
-          <QRCode value={joinUrl} size={56} />
-        </div>
-      )}
+      {/* JOIN — corner badge with a subtle shine sweep. */}
+      {!hideQr && <JoinBadge code={tournament.join_code} url={joinUrl} faded={clean} />}
     </div>
   );
 }
 
-function CompactStat({ label, value }: { label: string; value: string }) {
+function CompactStatNum({ label, value, suffix = '', format }: { label: string; value: number; suffix?: string; format?: (n: number) => string }) {
   return (
     <div className="card-felt px-3 py-2.5 flex items-center justify-between min-w-0 gap-2">
       <div className="uppercase tracking-widest text-ink-400 truncate" style={{ fontSize: 'clamp(0.65rem, 1.4vmin, 0.95rem)' }}>{label}</div>
-      <div className="font-display text-brass-shine tabular-nums truncate" style={{ fontSize: 'clamp(1.1rem, 4.2vmin, 2rem)' }}>{value}</div>
+      <div className="font-display text-brass-shine tabular-nums truncate" style={{ fontSize: 'clamp(1.1rem, 4.2vmin, 2rem)' }}>
+        <AnimatedNumber value={value} format={format} />{suffix}
+      </div>
     </div>
   );
 }
 
-function TightStat({ label, value }: { label: string; value: string }) {
+function TightStatNum({ label, value, suffix = '', format }: { label: string; value: number; suffix?: string; format?: (n: number) => string }) {
   return (
     <div className="card-felt px-2 py-1.5 text-center min-w-0">
       <div className="text-[9px] uppercase tracking-widest text-ink-400 truncate">{label}</div>
@@ -412,7 +497,7 @@ function TightStat({ label, value }: { label: string; value: string }) {
         className="font-display text-brass-shine tabular-nums truncate leading-tight"
         style={{ fontSize: 'clamp(0.85rem, 4vw, 1.25rem)' }}
       >
-        {value}
+        <AnimatedNumber value={value} format={format} />{suffix}
       </div>
     </div>
   );

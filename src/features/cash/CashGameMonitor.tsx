@@ -1,13 +1,19 @@
 import { Link, useParams } from 'react-router-dom';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCashGame } from '@/hooks/useCashGame';
 import { useSettings } from '@/store/settings';
 import { useT } from '@/lib/i18n';
 import { useFullscreen, useOrientation, useRedirectOnOrientation, useAutoFullscreen } from '@/hooks/useFullscreen';
 import { requestWakeLock, releaseWakeLock } from '@/lib/wakeLock';
-import { QRCode } from '@/components/QRCode';
 import { formatMoney } from '@/lib/format';
+import { AnimatedNumber } from '@/components/AnimatedNumber';
+import { AmbientBackdrop } from '@/components/AmbientBackdrop';
+import { StatusPill } from '@/components/StatusPill';
+import { JoinBadge } from '@/components/JoinBadge';
+import { chipClatterSound, cashRegisterSound, celebrationSound } from '@/lib/sounds';
+import { EmptyStateBadge } from '@/components/EmptyStateBadge';
+import { VirtualTable } from './VirtualTable';
 import {
   computePlayerStats, tableTotal, totalBoughtIn, totalCashedOut,
   topUpChampion, biggestStake, hotSeat, biggestSingleBuyIn,
@@ -34,12 +40,41 @@ interface MonitorBodyProps {
 
 export function MonitorBody({ cashGameId, spectator = false }: MonitorBodyProps) {
   const { game, players, buyIns, profileMap, loading } = useCashGame(cashGameId);
-  const { currency } = useSettings();
+  const { currency, soundEnabled } = useSettings();
   const { isFullscreen, toggle: toggleFullscreen } = useFullscreen();
   const orientation = useOrientation();
   useAutoFullscreen();
   const t = useT();
   const [hideQr, setHideQr] = useState(false);
+
+  // Sound cues — fire on count changes (new buy-in / new cash-out). Refs
+  // hold the previous count so we only chime on a true *increase* and not
+  // on initial mount or stale-state replays.
+  const lastBuyInCountRef = useRef<number | null>(null);
+  const lastCashOutCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!soundEnabled || spectator) return;
+    if (lastBuyInCountRef.current === null) {
+      lastBuyInCountRef.current = buyIns.length;
+      return;
+    }
+    if (buyIns.length > lastBuyInCountRef.current) {
+      // First buy-in of the night gets a celebration; later ones a chip clatter.
+      if (lastBuyInCountRef.current === 0) celebrationSound();
+      else chipClatterSound();
+    }
+    lastBuyInCountRef.current = buyIns.length;
+  }, [buyIns.length, soundEnabled, spectator]);
+  useEffect(() => {
+    if (!soundEnabled || spectator) return;
+    const cashedOut = players.filter((p) => p.cash_out !== null).length;
+    if (lastCashOutCountRef.current === null) {
+      lastCashOutCountRef.current = cashedOut;
+      return;
+    }
+    if (cashedOut > lastCashOutCountRef.current) cashRegisterSound();
+    lastCashOutCountRef.current = cashedOut;
+  }, [players, soundEnabled, spectator]);
 
   // Tick once a second so durations and "ago" labels update live.
   const [now, setNow] = useState(() => Date.now());
@@ -173,6 +208,7 @@ export function MonitorBody({ cashGameId, spectator = false }: MonitorBodyProps)
 
   return (
     <div className="fixed inset-0 bg-felt-radial overflow-hidden text-ink-50">
+      <AmbientBackdrop variant="cash" />
       {!clean && (
         <header className="absolute top-0 inset-x-0 z-20 flex items-center justify-between gap-2 px-3 sm:px-6 pt-3 pt-safe">
           {spectator ? (
@@ -185,6 +221,7 @@ export function MonitorBody({ cashGameId, spectator = false }: MonitorBodyProps)
             </Link>
           )}
           <div className="flex items-center gap-1.5 shrink-0">
+            <StatusPill topic={`cash-monitor:${game.id}`} />
             <span className="pill bg-felt-800/70 border border-felt-700 hidden sm:inline-flex">
               {game.small_blind ?? 0}/{game.big_blind ?? 0}
             </span>
@@ -214,26 +251,36 @@ export function MonitorBody({ cashGameId, spectator = false }: MonitorBodyProps)
       )}
 
       {orientation === 'landscape' ? (
-        <div className={`absolute inset-0 flex gap-3 px-3 py-3 ${clean ? '' : 'pt-14'}`}>
-          {/* Left: hero card dominates */}
-          <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center">
+        <div className={`absolute inset-0 z-10 flex flex-col gap-3 px-3 py-3 ${clean ? '' : 'pt-14'}`}>
+          {/* Top: hero card */}
+          <div className="shrink-0 flex flex-col items-center justify-center text-center" style={{ height: '38%' }}>
             <HeroDisplay hero={hero} totalCards={heroCards.length} activeIdx={heroIdx} />
           </div>
-
-          {/* Right: stats stack + seated list */}
-          <div className="flex flex-col gap-2 w-[28%] max-w-[320px] min-w-[200px] overflow-hidden">
-            <CompactStat label={t('seated')} value={`${seated.length}`} />
-            <CompactStat label={t('cashedOutShort')} value={`${cashedOut.length}`} />
-            <CompactStat label={t('buyInsLabel')} value={`${buyIns.length}`} />
-            <SeatedList players={seated} currency={currency} t={t} now={now} compact />
+          {/* Middle: virtual table dominates */}
+          <div className="flex-1 min-h-0 flex items-center gap-3 overflow-hidden">
+            <div className="flex-1 min-w-0">
+              {seated.length > 0 ? (
+                <VirtualTable seated={seated} currency={currency} sessionDurationMs={sessionMs} />
+              ) : (
+                <div className="h-full grid place-items-center">
+                  <EmptyStateBadge glyph="🃏" title={t('noOneSeated')} />
+                </div>
+              )}
+            </div>
+            {/* Right rail stats */}
+            <div className="flex flex-col gap-2 w-[18%] max-w-[220px] min-w-[150px] overflow-hidden">
+              <CompactStatNum label={t('seated')} value={seated.length} />
+              <CompactStatNum label={t('cashedOutShort')} value={cashedOut.length} />
+              <CompactStatNum label={t('buyInsLabel')} value={buyIns.length} />
+            </div>
           </div>
         </div>
       ) : (
-        <div className={`absolute inset-0 flex flex-col gap-3 px-3 ${clean ? 'py-3' : 'pt-16 pb-3'}`}>
+        <div className={`absolute inset-0 z-10 flex flex-col gap-3 px-3 ${clean ? 'py-3' : 'pt-16 pb-3'}`}>
           <div className="grid grid-cols-3 gap-1.5 shrink-0">
-            <TightStat label={t('seated')} value={`${seated.length}`} />
-            <TightStat label={t('buyInsLabel')} value={`${buyIns.length}`} />
-            <TightStat label={t('totalBoughtIn')} value={formatMoney(totalIn, currency)} />
+            <TightStatNum label={t('seated')} value={seated.length} />
+            <TightStatNum label={t('buyInsLabel')} value={buyIns.length} />
+            <TightStatNum label={t('totalBoughtIn')} value={totalIn} format={(n) => formatMoney(Math.round(n), currency)} />
           </div>
 
           <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center">
@@ -249,22 +296,9 @@ export function MonitorBody({ cashGameId, spectator = false }: MonitorBodyProps)
         <ActivityTicker feed={feed.slice(0, 4)} currency={currency} t={t} now={now} />
       )}
 
-      {/* JOIN — corner badge */}
+      {/* JOIN — corner badge with shine sweep */}
       {!hideQr && game.join_code && (
-        <div className={`absolute z-10 bottom-2 left-2 flex items-center gap-2 bg-felt-950/85 backdrop-blur-sm border border-felt-700/60 rounded-xl p-1.5 ${
-          clean ? 'opacity-80 hover:opacity-100 transition' : ''
-        }`}>
-          <div className="text-left pl-1">
-            <div className="text-[9px] uppercase tracking-[0.3em] text-brass-300 leading-none">{t('joinLabel')}</div>
-            <div
-              className="font-display tracking-[0.25em] text-brass-shine leading-none"
-              style={{ fontSize: 'clamp(0.95rem, 3.5vmin, 1.6rem)' }}
-            >
-              {game.join_code}
-            </div>
-          </div>
-          <QRCode value={joinUrl} size={56} />
-        </div>
+        <JoinBadge code={game.join_code} url={joinUrl} faded={clean} />
       )}
 
       {/* Finished overlay */}
@@ -290,9 +324,11 @@ interface HeroCard {
 
 function HeroDisplay({ hero, totalCards, activeIdx }: { hero: HeroCard | undefined; totalCards: number; activeIdx: number }) {
   if (!hero) return (
-    <div className="text-ink-300 font-display" style={{ fontSize: 'clamp(1.5rem, 5vmin, 3rem)' }}>
-      …
-    </div>
+    <EmptyStateBadge
+      glyph="🃏"
+      title="Waiting for first buy-in"
+      subtitle="Seat a player to bring this table to life."
+    />
   );
   return (
     <AnimatePresence mode="wait">
@@ -415,16 +451,18 @@ function ActivityTicker({
   );
 }
 
-function CompactStat({ label, value }: { label: string; value: string }) {
+function CompactStatNum({ label, value, format }: { label: string; value: number; format?: (n: number) => string }) {
   return (
     <div className="card-felt px-3 py-2 flex items-center justify-between min-w-0">
       <div className="text-[10px] uppercase tracking-widest text-ink-400 truncate">{label}</div>
-      <div className="font-display text-brass-shine tabular-nums truncate" style={{ fontSize: 'clamp(0.95rem, 3.5vmin, 1.5rem)' }}>{value}</div>
+      <div className="font-display text-brass-shine tabular-nums truncate" style={{ fontSize: 'clamp(0.95rem, 3.5vmin, 1.5rem)' }}>
+        <AnimatedNumber value={value} format={format} />
+      </div>
     </div>
   );
 }
 
-function TightStat({ label, value }: { label: string; value: string }) {
+function TightStatNum({ label, value, format }: { label: string; value: number; format?: (n: number) => string }) {
   return (
     <div className="card-felt px-2 py-1.5 text-center min-w-0">
       <div className="text-[9px] uppercase tracking-widest text-ink-400 truncate">{label}</div>
@@ -432,7 +470,7 @@ function TightStat({ label, value }: { label: string; value: string }) {
         className="font-display text-brass-shine tabular-nums truncate leading-tight"
         style={{ fontSize: 'clamp(0.85rem, 4vw, 1.25rem)' }}
       >
-        {value}
+        <AnimatedNumber value={value} format={format} />
       </div>
     </div>
   );

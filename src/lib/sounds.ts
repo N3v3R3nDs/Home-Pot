@@ -62,3 +62,21 @@ export function tickSound() {
 export function winnerSound() {
   [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.45, 'sine', 0.18, i * 0.10));
 }
+
+/** Quick chip clatter — used when a cash buy-in is recorded. */
+export function chipClatterSound() {
+  // Three short, bright clicks in quick succession with a tiny pitch jitter.
+  [1400, 1300, 1500].forEach((f, i) => tone(f + Math.random() * 60, 0.04, 'square', 0.08, i * 0.06));
+}
+
+/** Soft cash-register chime — used when a player cashes out. */
+export function cashRegisterSound() {
+  tone(880, 0.10, 'sine', 0.16, 0);
+  tone(1320, 0.18, 'sine', 0.14, 0.07);
+  tone(1760, 0.30, 'triangle', 0.12, 0.16);
+}
+
+/** Celebratory rising arpeggio — used for first bust, chip leader changes, big top-ups. */
+export function celebrationSound() {
+  [392, 523, 659, 784].forEach((f, i) => tone(f, 0.28, 'triangle', 0.14, i * 0.08));
+}

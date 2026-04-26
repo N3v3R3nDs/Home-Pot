@@ -129,6 +129,129 @@ export async function renderShareCard({ title, subtitle, podium, currency }: Arg
     c.toBlob((b) => b ? resolve(b) : reject(new Error('blob failed')), 'image/png', 0.95));
 }
 
+interface CashSettlement {
+  fromName: string;
+  toName: string;
+  amount: number;
+}
+
+interface CashShareArgs {
+  title: string;       // e.g. cash game name
+  subtitle?: string;   // e.g. "Friday · 4h 12m"
+  totalOnTable: number;
+  totalBoughtIn: number;
+  settlements: CashSettlement[];
+  currency: string;
+}
+
+/** Render a 1080×1080 settle-up share card for a cash game. */
+export async function renderCashShareCard({ title, subtitle, totalOnTable, totalBoughtIn, settlements, currency }: CashShareArgs): Promise<Blob> {
+  const W = 1080, H = 1080;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D not supported');
+
+  const felt950 = `rgb(${readVar('--felt-950')})`;
+  const felt700 = `rgb(${readVar('--felt-700')})`;
+  const brassMid = `rgb(${readVar('--shine-mid')})`;
+  const brassFrom = `rgb(${readVar('--shine-from')})`;
+  const ink400 = `rgb(${readVar('--ink-400')})`;
+
+  const bg = ctx.createRadialGradient(W / 2, -200, 100, W / 2, H / 2, H);
+  bg.addColorStop(0, felt700);
+  bg.addColorStop(1, felt950);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Top accent bar
+  const accent = ctx.createLinearGradient(0, 0, W, 0);
+  accent.addColorStop(0, brassFrom); accent.addColorStop(0.5, brassMid); accent.addColorStop(1, brassFrom);
+  ctx.fillStyle = accent;
+  ctx.fillRect(0, 0, W, 12);
+
+  // Header
+  ctx.fillStyle = brassMid;
+  ctx.font = 'bold 36px "Bebas Neue", Impact, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('🃏 HOME POT · CASH', W / 2, 110);
+
+  ctx.fillStyle = brassFrom;
+  ctx.font = 'bold 76px "Bebas Neue", Impact, sans-serif';
+  ctx.fillText(title.toUpperCase(), W / 2, 195);
+
+  if (subtitle) {
+    ctx.fillStyle = ink400;
+    ctx.font = '30px Inter, sans-serif';
+    ctx.fillText(subtitle, W / 2, 245);
+  }
+
+  // Stat row
+  const statY = 320;
+  const drawStat = (label: string, value: string, x: number) => {
+    ctx.fillStyle = ink400;
+    ctx.font = '24px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, x, statY);
+    ctx.fillStyle = brassFrom;
+    ctx.font = 'bold 56px "Bebas Neue", Impact, sans-serif';
+    ctx.fillText(value, x, statY + 60);
+  };
+  drawStat('ON THE TABLE', formatMoney(totalOnTable, currency), W / 2 - 200);
+  drawStat('BOUGHT IN', formatMoney(totalBoughtIn, currency), W / 2 + 200);
+
+  // Settlements list
+  const listY = 470;
+  ctx.fillStyle = ink400;
+  ctx.font = '28px Inter, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SETTLE UP', W / 2, listY);
+
+  const visible = settlements.slice(0, 8);
+  visible.forEach((s, i) => {
+    const y = listY + 60 + i * 60;
+    const ctxAny = ctx as CanvasRenderingContext2D & { roundRect?: (x: number, y: number, w: number, h: number, r: number) => void };
+    ctx.fillStyle = felt950;
+    ctx.beginPath();
+    if (typeof ctxAny.roundRect === 'function') ctxAny.roundRect(80, y - 36, W - 160, 50, 12);
+    else ctx.rect(80, y - 36, W - 160, 50);
+    ctx.fill();
+
+    // From → To
+    ctx.fillStyle = '#f87171';
+    ctx.font = 'bold 28px Inter, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(s.fromName, 110, y);
+    ctx.fillStyle = ink400;
+    ctx.fillText('→', 110 + ctx.measureText(s.fromName).width + 16, y);
+    ctx.fillStyle = '#34d399';
+    const arrowEnd = 110 + ctx.measureText(s.fromName).width + 50;
+    ctx.fillText(s.toName, arrowEnd, y);
+
+    // Amount
+    ctx.fillStyle = brassFrom;
+    ctx.font = 'bold 32px "Bebas Neue", Impact, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(formatMoney(s.amount, currency), W - 110, y);
+  });
+
+  if (settlements.length === 0) {
+    ctx.fillStyle = ink400;
+    ctx.font = '28px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Everyone broke even', W / 2, listY + 100);
+  }
+
+  // Footer
+  ctx.fillStyle = ink400;
+  ctx.font = '24px Inter, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('home pot · cash game', W / 2, H - 30);
+
+  return new Promise((resolve, reject) =>
+    c.toBlob((b) => b ? resolve(b) : reject(new Error('blob failed')), 'image/png', 0.95));
+}
+
 /** Trigger native share or download. */
 export async function shareCard(blob: Blob, filename: string, title: string): Promise<void> {
   const file = new File([blob], filename, { type: 'image/png' });
