@@ -36,8 +36,38 @@ export function CashGameLive() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [seasons, setSeasons] = useState<Season[]>([]);
+  const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
+  const [recentGuests, setRecentGuests] = useState<string[]>([]);
   const confirm = useConfirm();
   const t = useT();
+
+  // Load registered members + recent guest names so the host can re-seat the
+  // same regulars in one tap (links by profile_id or guest_name → stats + bank
+  // roll up across sessions).
+  useEffect(() => {
+    if (!adding) return;
+    if (allProfiles.length > 0 && recentGuests.length > 0) return;
+    (async () => {
+      const [{ data: profs }, { data: tPlayers }, { data: cPlayers }] = await Promise.all([
+        supabase.from('profiles').select('*').order('display_name'),
+        supabase.from('tournament_players').select('guest_name, created_at')
+          .not('guest_name', 'is', null)
+          .order('created_at', { ascending: false }).limit(120),
+        supabase.from('cash_game_players').select('guest_name, created_at')
+          .not('guest_name', 'is', null)
+          .order('created_at', { ascending: false }).limit(120),
+      ]);
+      if (profs) setAllProfiles(profs as Profile[]);
+      const seen = new Map<string, number>();
+      for (const r of [...(tPlayers ?? []), ...(cPlayers ?? [])]) {
+        const name = ((r as { guest_name: string }).guest_name ?? '').trim();
+        if (!name) continue;
+        const ts = Date.parse((r as { created_at: string }).created_at);
+        if (!seen.has(name) || ts > seen.get(name)!) seen.set(name, ts);
+      }
+      setRecentGuests(Array.from(seen.entries()).sort((a, b) => b[1] - a[1]).map(([n]) => n).slice(0, 24));
+    })();
+  }, [adding, allProfiles.length, recentGuests.length]);
 
   useEffect(() => {
     supabase.from('seasons').select('*').order('starts_on', { ascending: false })
@@ -379,14 +409,50 @@ export function CashGameLive() {
         </Button>
       </Sheet>
 
-      <Sheet open={adding} onClose={() => { setAdding(false); setFromBank(false); }} title="Add player">
+      <Sheet open={adding} onClose={() => { setAdding(false); setFromBank(false); setGuestName(''); }} title="Add player">
         <Input label="Default buy-in" type="number" value={defaultBuyIn} suffix={currency}
           onChange={(e) => setDefaultBuyIn(Number(e.target.value))} />
-        <Input label="Guest name" value={guestName} onChange={(e) => setGuestName(e.target.value)}
+
+        {(() => {
+          const seatedProfileIds = new Set(players.map((p) => p.profile_id).filter(Boolean) as string[]);
+          const seatedGuestNames = new Set(players.map((p) => p.guest_name?.toLowerCase()).filter(Boolean) as string[]);
+          const availableProfiles = allProfiles.filter((p) => !seatedProfileIds.has(p.id));
+          const availableGuests = recentGuests.filter((n) => !seatedGuestNames.has(n.toLowerCase()));
+          if (availableProfiles.length === 0 && availableGuests.length === 0) return null;
+          return (
+            <div className="mt-4">
+              <p className="label">Tap to seat — same person, same stats & bank</p>
+              <div className="flex flex-wrap gap-1.5">
+                {availableProfiles.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => addPlayer(p.id)}
+                    className="pill bg-felt-900/60 border border-felt-700 hover:border-brass-500/40 transition"
+                    title="Registered member — links to their account"
+                  >
+                    {p.avatar_emoji ?? '🃏'} {p.display_name}
+                  </button>
+                ))}
+                {availableGuests.map((name) => (
+                  <button
+                    key={name}
+                    onClick={() => addPlayer(undefined, name)}
+                    className="pill bg-felt-900/60 border border-felt-700 hover:border-brass-500/40 transition"
+                    title="Recurring guest — links to their bank balance under this name"
+                  >
+                    👤 {name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
+        <Input label="Or add a new guest" value={guestName} onChange={(e) => setGuestName(e.target.value)}
           placeholder="e.g. Lars" className="mt-3" />
         <BankToggle on={fromBank} setOn={setFromBank} mode="from" amount={defaultBuyIn} currency={currency} />
         <Button full onClick={() => addPlayer(undefined, guestName.trim())} className="mt-4" disabled={!guestName.trim()}>
-          Seat guest with {formatMoney(defaultBuyIn, currency)}{fromBank ? ' · from 🏦' : ''}
+          Seat new guest with {formatMoney(defaultBuyIn, currency)}{fromBank ? ' · from 🏦' : ''}
         </Button>
       </Sheet>
 

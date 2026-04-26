@@ -19,6 +19,7 @@ import {
 } from '@/lib/chipSet';
 import { formatChips, formatMoney } from '@/lib/format';
 import { useToast } from '@/components/ui/Toast';
+import { useConfirm } from '@/components/ui/Confirm';
 import { useEffect } from 'react';
 import { useSeason } from '@/store/season';
 import { useT } from '@/lib/i18n';
@@ -37,6 +38,16 @@ export function TournamentWizard() {
 
   const toast = useToast();
   const t = useT();
+  const confirm = useConfirm();
+  const removeGuestPick = async (p: PlayerPick) => {
+    if (!await confirm({
+      title: `Remove ${p.guestName}?`,
+      message: 'They will be removed from the player list.',
+      confirmLabel: 'Remove',
+      destructive: true,
+    })) return;
+    togglePicked(p);
+  };
   const { activeSeasonId } = useSeason();
 
   // setup
@@ -91,6 +102,7 @@ export function TournamentWizard() {
   const [picked, setPicked] = useState<PlayerPick[]>([]);
   const [guestDraft, setGuestDraft] = useState('');
   const [profilesLoaded, setProfilesLoaded] = useState(false);
+  const [recentGuests, setRecentGuests] = useState<string[]>([]);
 
   // structure
   const [templateId, setTemplateId] = useState('home-night');
@@ -120,8 +132,34 @@ export function TournamentWizard() {
 
   const loadProfiles = async () => {
     if (profilesLoaded) return;
-    const { data } = await supabase.from('profiles').select('*').order('display_name');
-    if (data) setAllProfiles(data as Profile[]);
+    // Parallel: profiles + recent guest names from past tournament_players
+    // and cash_game_players (last 100 of each, dedup, sort by recency).
+    const [{ data: profs }, { data: tPlayers }, { data: cPlayers }] = await Promise.all([
+      supabase.from('profiles').select('*').order('display_name'),
+      supabase.from('tournament_players')
+        .select('guest_name, created_at')
+        .not('guest_name', 'is', null)
+        .order('created_at', { ascending: false }).limit(100),
+      supabase.from('cash_game_players')
+        .select('guest_name, created_at')
+        .not('guest_name', 'is', null)
+        .order('created_at', { ascending: false }).limit(100),
+    ]);
+    if (profs) setAllProfiles(profs as Profile[]);
+
+    const seen = new Map<string, number>();  // guest_name → most recent timestamp
+    for (const r of [...(tPlayers ?? []), ...(cPlayers ?? [])]) {
+      const name = ((r as { guest_name: string }).guest_name ?? '').trim();
+      if (!name) continue;
+      const ts = Date.parse((r as { created_at: string }).created_at);
+      if (!seen.has(name) || ts > seen.get(name)!) seen.set(name, ts);
+    }
+    const recents = Array.from(seen.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name)
+      .slice(0, 24);
+    setRecentGuests(recents);
+
     setProfilesLoaded(true);
     if (user && !picked.find((p) => p.profileId === user.id)) {
       setPicked((prev) => [{ profileId: user.id }, ...prev]);
@@ -311,8 +349,38 @@ export function TournamentWizard() {
             </div>
           </div>
 
+          {recentGuests.length > 0 && (
+            <div>
+              <p className="label">Recent guests · tap to add</p>
+              <div className="flex flex-wrap gap-1.5">
+                {recentGuests.map((name) => {
+                  const already = picked.some((p) => p.guestName?.toLowerCase() === name.toLowerCase());
+                  return (
+                    <button
+                      key={name}
+                      onClick={() => {
+                        if (already) {
+                          setPicked((prev) => prev.filter((p) => p.guestName?.toLowerCase() !== name.toLowerCase()));
+                        } else {
+                          setPicked((prev) => [...prev, { guestName: name }]);
+                        }
+                      }}
+                      className={`pill border transition ${
+                        already
+                          ? 'bg-brass-500/20 border-brass-500/50 text-brass-100'
+                          : 'bg-felt-900/60 border-felt-700 text-ink-200 hover:border-brass-500/40'
+                      }`}
+                    >
+                      {already ? '✓ ' : '＋ '}{name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div>
-            <p className="label">Guest player</p>
+            <p className="label">Add a new guest</p>
             <div className="flex gap-2">
               <Input
                 value={guestDraft}
@@ -327,7 +395,7 @@ export function TournamentWizard() {
                 {picked.filter((p) => p.guestName).map((p) => (
                   <li key={p.guestName} className="flex items-center justify-between text-sm bg-felt-900/60 rounded-lg px-3 py-2">
                     <span>👤 {p.guestName}</span>
-                    <button className="text-red-400" onClick={() => togglePicked(p)}>Remove</button>
+                    <button className="text-red-400" onClick={() => removeGuestPick(p)}>Remove</button>
                   </li>
                 ))}
               </ul>

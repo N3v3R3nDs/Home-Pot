@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/Card';
 import { supabase } from '@/lib/supabase';
 import { useSettings } from '@/store/settings';
 import { formatMoney } from '@/lib/format';
+import { useConfirm } from '@/components/ui/Confirm';
 
 interface AuditRow {
   id: number;
@@ -53,6 +54,7 @@ function relativeTime(iso: string): string {
 
 export function ActivityFeed() {
   const { currency } = useSettings();
+  const confirm = useConfirm();
   const [rows, setRows] = useState<AuditRow[]>([]);
   /** Set of ref_ids whose referenced tournament/cash_game has been (soft-)deleted. */
   const [deletedRefIds, setDeletedRefIds] = useState<Set<string>>(new Set());
@@ -99,6 +101,12 @@ export function ActivityFeed() {
   }, []);
 
   const dismiss = async (id: number) => {
+    if (!await confirm({
+      title: 'Dismiss this activity entry?',
+      message: 'It will be permanently removed from the audit log.',
+      confirmLabel: 'Dismiss',
+      destructive: true,
+    })) return;
     setRows((prev) => prev.filter((r) => r.id !== id));
     await supabase.from('audit_log').delete().eq('id', id);
   };

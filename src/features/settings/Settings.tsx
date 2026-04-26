@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
+import { useConfirm } from '@/components/ui/Confirm';
 import { Chip } from '@/components/Chip';
 import { useAuth } from '@/store/auth';
 import { useSettings } from '@/store/settings';
@@ -21,6 +22,16 @@ const CURRENCIES = ['NOK', 'USD', 'EUR', 'SEK', 'DKK', 'GBP'];
 
 export function Settings() {
   const { profile, user, updateProfile, signOut } = useAuth();
+  const confirm = useConfirm();
+  const confirmSignOut = async () => {
+    if (!await confirm({
+      title: 'Sign out?',
+      message: 'You can sign back in anytime with your name + PIN (or email).',
+      confirmLabel: 'Sign out',
+      destructive: true,
+    })) return;
+    await signOut();
+  };
   const { currency, setCurrency, inventory, setInventory, soundEnabled, toggleSound, theme, setTheme, language, setLanguage, largeText, toggleLargeText } = useSettings();
   const t = useT();
   const [notifPerm, setNotifPerm] = useState(notificationPermission());
@@ -284,7 +295,7 @@ export function Settings() {
       </Card>
 
       <Card>
-        <Button variant="danger" full onClick={signOut}>Sign out</Button>
+        <Button variant="danger" full onClick={confirmSignOut}>Sign out</Button>
       </Card>
 
       <Sheet open={!!resetting} onClose={() => { setResetting(null); setNewPin(''); setResetMsg(null); }}

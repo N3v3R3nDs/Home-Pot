@@ -50,7 +50,48 @@ export function TournamentLive() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [seasons, setSeasons] = useState<Season[]>([]);
+  const [editingPlayer, setEditingPlayer] = useState<TournamentPlayer | null>(null);
+  const [editPosDraft, setEditPosDraft] = useState<number>(0);
   const autoClaimedRef = useRef(false);
+
+  const openEditPlayer = (p: TournamentPlayer) => {
+    setEditPosDraft(p.finishing_position ?? 0);
+    setEditingPlayer(p);
+  };
+  const saveEditPlayer = async () => {
+    if (!editingPlayer) return;
+    const newPos = Math.max(1, editPosDraft);
+    const newPrize = payouts.find((x) => x.place === newPos)?.percent ?? 0;
+    const patch = {
+      finishing_position: newPos,
+      prize: newPrize,
+      eliminated_at: editingPlayer.eliminated_at ?? new Date().toISOString(),
+    };
+    patchPlayer(editingPlayer.id, patch);
+    setEditingPlayer(null);
+    await supabase.from('tournament_players').update(patch).eq('id', editingPlayer.id);
+  };
+  const unbustPlayer = async (p: TournamentPlayer) => {
+    if (!await confirm({
+      title: `Bring ${playerName(p)} back?`,
+      message: 'Reverses their elimination — they go back into the alive list with their prize cleared.',
+      confirmLabel: 'Bring back',
+    })) return;
+    const patch = { eliminated_at: null, eliminated_by: null, finishing_position: null, prize: 0 };
+    patchPlayer(p.id, patch);
+    setEditingPlayer(null);
+    await supabase.from('tournament_players').update(patch).eq('id', p.id);
+  };
+  const removePlayer = async (p: TournamentPlayer) => {
+    if (!await confirm({
+      title: `Remove ${playerName(p)} entirely?`,
+      message: 'Deletes their entry from this tournament. Their stats stay in History under previous tournaments.',
+      destructive: true,
+      confirmLabel: 'Remove',
+    })) return;
+    setEditingPlayer(null);
+    await supabase.from('tournament_players').delete().eq('id', p.id);
+  };
 
   useEffect(() => {
     supabase.from('seasons').select('*').order('starts_on', { ascending: false })
@@ -312,10 +353,17 @@ export function TournamentLive() {
       },
     });
 
-    if (alive.length === 2) {
-      // Last one standing is also "eliminated" (1st place) so we record their prize
+    // Win-condition: when only ONE player would be left alive after this bust,
+    // auto-mark them as 1st. Guarded:
+    //  - target hadn't already busted (prevents double-fire on rapid taps)
+    //  - the remaining player isn't already eliminated (prevents duplicate 1st)
+    //  - nobody else already holds finishing_position 1
+    if (alive.length === 2 && target.eliminated_at === null) {
       const remaining = alive.find((p) => p.id !== target.id);
-      if (remaining) {
+      const someoneElseAlready1st = players.some(
+        (p) => p.id !== remaining?.id && p.finishing_position === 1,
+      );
+      if (remaining && remaining.eliminated_at === null && !someoneElseAlready1st) {
         const winnerPrize = payouts.find((p) => p.place === 1)?.percent ?? 0;
         const winnerPatch = {
           eliminated_at: new Date().toISOString(),
@@ -324,7 +372,10 @@ export function TournamentLive() {
         };
         patchPlayer(remaining.id, winnerPatch);
         patchTournament({ state: 'finished' });
-        await supabase.from('tournament_players').update(winnerPatch).eq('id', remaining.id);
+        await supabase.from('tournament_players')
+          .update(winnerPatch)
+          .eq('id', remaining.id)
+          .is('eliminated_at', null);  // CAS — only mark if still alive on server
         await supabase.from('tournaments').update({ state: 'finished' }).eq('id', tournament.id);
       }
     }
@@ -492,7 +543,11 @@ export function TournamentLive() {
                 exit={{ opacity: 0, x: 60, transition: { duration: 0.25 } }}
                 className="flex items-center justify-between bg-felt-950/50 rounded-xl px-4 py-3 border border-felt-800"
               >
-                <div className="flex items-center gap-3">
+                <button
+                  onClick={() => openEditPlayer(p)}
+                  className="flex items-center gap-3 text-left"
+                  title="Edit / remove"
+                >
                   <span className="text-xl">{playerAvatar(p)}</span>
                   <div>
                     <div className="font-semibold">{playerName(p)}</div>
@@ -503,7 +558,7 @@ export function TournamentLive() {
                       {p.bounties_won > 0 && <span>💀 {p.bounties_won}</span>}
                     </div>
                   </div>
-                </div>
+                </button>
                 <div className="flex gap-1">
                   {tournament.tournament_type !== 'freezeout' && clock.levelIndex < tournament.rebuys_until_level && (
                     <Button variant="ghost" className="!px-3 !py-2 text-xs" onClick={() => setChipUp({ player: p, kind: 'rebuy' })}>{t('re')}</Button>
@@ -523,16 +578,67 @@ export function TournamentLive() {
           <p className="label">{t('eliminated')}</p>
           <ul className="space-y-1">
             {out.map((p) => (
-              <li key={p.id} className="flex items-center justify-between text-sm bg-felt-950/40 rounded-lg px-3 py-2">
-                <span>{playerAvatar(p)} {playerName(p)}</span>
-                <span className="font-mono text-ink-300">
-                  {p.finishing_position && formatPlace(p.finishing_position)} · {formatMoney(p.prize, currency)}
-                </span>
+              <li key={p.id}>
+                <button
+                  onClick={() => openEditPlayer(p)}
+                  className="w-full flex items-center justify-between text-sm bg-felt-950/40 hover:bg-felt-900/60 rounded-lg px-3 py-2 transition"
+                >
+                  <span>{playerAvatar(p)} {playerName(p)}</span>
+                  <span className="font-mono text-ink-300">
+                    {p.finishing_position && formatPlace(p.finishing_position)} · {formatMoney(p.prize, currency)}
+                    <span className="text-ink-500 ml-2 text-xs">✏️</span>
+                  </span>
+                </button>
               </li>
             ))}
           </ul>
         </Card>
       )}
+
+      <Sheet
+        open={!!editingPlayer}
+        onClose={() => setEditingPlayer(null)}
+        title={editingPlayer ? `Edit ${playerName(editingPlayer)}` : ''}
+      >
+        {editingPlayer && (
+          <div className="space-y-4">
+            <div>
+              <label className="label">Finishing position</label>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setEditPosDraft((v) => Math.max(1, v - 1))}
+                  className="w-12 h-12 rounded-xl bg-felt-800 text-2xl"
+                >−</button>
+                <input
+                  type="number"
+                  value={editPosDraft}
+                  min={1}
+                  onChange={(e) => setEditPosDraft(Math.max(1, Number(e.target.value)))}
+                  className="input text-center font-mono text-2xl flex-1"
+                />
+                <button
+                  onClick={() => setEditPosDraft((v) => v + 1)}
+                  className="w-12 h-12 rounded-xl bg-felt-800 text-2xl"
+                >+</button>
+              </div>
+              <p className="text-[11px] text-ink-400 mt-2 text-center">
+                Prize will auto-update to {formatMoney(payouts.find((x) => x.place === editPosDraft)?.percent ?? 0, currency)}
+              </p>
+            </div>
+            <Button full onClick={saveEditPlayer}>Save position</Button>
+            <div className="border-t border-felt-800 pt-4 space-y-2">
+              {editingPlayer.eliminated_at !== null && (
+                <Button variant="ghost" full onClick={() => unbustPlayer(editingPlayer)}>
+                  ↩ Bring back into the game
+                </Button>
+              )}
+              <Button variant="danger" full onClick={() => removePlayer(editingPlayer)}>
+                🗑 Remove from tournament entirely
+              </Button>
+            </div>
+          </div>
+        )}
+      </Sheet>
 
       {/* SEAT CLAIM — auto-claims a matching seat when the user lands on the
           tournament if their stored name matches a roster slot. Otherwise
