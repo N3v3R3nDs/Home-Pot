@@ -75,7 +75,11 @@ export function useCashGame(cashGameId: string | undefined) {
             return prev;
           });
         })
-      .subscribe();
+      .subscribe((status) => {
+        // When realtime reconnects after a drop, fetch a fresh snapshot — any
+        // events that fired while we were disconnected were silently dropped.
+        if (status === 'SUBSCRIBED' && !cancelled) void fetchSnapshot();
+      });
 
     // Resync on tab focus (handles a TV that briefly slept, or the live
     // making changes while we were on monitor). Realtime drops events on
@@ -86,10 +90,11 @@ export function useCashGame(cashGameId: string | undefined) {
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
 
-    // Hard safety net: poll every 10s. Even with realtime, dodgy networks
-    // (TV, public wifi) can silently drop events. Cheap query, keeps every
-    // mounted view within 10s of DB truth.
-    const pollId = setInterval(() => { if (!cancelled) void fetchSnapshot(); }, 10_000);
+    // Hard safety net: poll every 3s. Realtime can silently drop events on
+    // dodgy networks (TV, public wifi). Live and monitor views must always
+    // agree on counts/totals — both derive from the same DB rows — so the
+    // worst-case divergence between any two views needs to be tiny.
+    const pollId = setInterval(() => { if (!cancelled) void fetchSnapshot(); }, 3_000);
 
     return () => {
       cancelled = true;

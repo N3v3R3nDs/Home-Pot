@@ -44,7 +44,11 @@ export function useTournament(tournamentId: string | undefined) {
             return prev;
           });
         })
-      .subscribe();
+      .subscribe((status) => {
+        // When realtime reconnects after a drop, fetch a fresh snapshot — any
+        // events that fired while we were disconnected were silently dropped.
+        if (status === 'SUBSCRIBED' && !cancelled) void load();
+      });
 
     // Resync on tab/window focus — covers a backgrounded monitor that slept
     // through realtime events, and the rotation handoff between live/monitor.
@@ -54,11 +58,13 @@ export function useTournament(tournamentId: string | undefined) {
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
 
-    // Hard safety net: poll every 10s. Realtime can silently drop events on
-    // dodgy networks (TVs, sleeping tabs, public wifi). The poll is cheap
-    // (single row + filtered players) and guarantees the monitor never sits
-    // on a stale level for more than ~10s.
-    const pollId = setInterval(() => { if (!cancelled) void load(); }, 10_000);
+    // Hard safety net: poll every 3s. Realtime can silently drop events on
+    // dodgy networks (TVs, sleeping tabs, public wifi), and any divergence
+    // between the live and monitor views is jarring — both should always be
+    // showing the same level/timer since they derive from the same DB row.
+    // The poll is two cheap reads (single row + filtered players) and
+    // guarantees views can't sit on stale data for more than ~3s.
+    const pollId = setInterval(() => { if (!cancelled) void load(); }, 3_000);
 
     return () => {
       cancelled = true;
