@@ -10,7 +10,7 @@ import { calculatePrizePool, distributePrizes } from './payouts';
 import { formatChips, formatDuration, formatMoney, formatPlace } from '@/lib/format';
 import { requestWakeLock, releaseWakeLock } from '@/lib/wakeLock';
 import { QRCode } from '@/components/QRCode';
-import { useFullscreen, useOrientation, useRedirectOnOrientation } from '@/hooks/useFullscreen';
+import { useFullscreen, useOrientation, useRedirectOnOrientation, useAutoFullscreen } from '@/hooks/useFullscreen';
 
 /**
  * The monitor view — designed for a large screen / TV / extra phone propped
@@ -26,6 +26,7 @@ export function TournamentMonitor() {
   const { isFullscreen, toggle: toggleFullscreen } = useFullscreen();
   const orientation = useOrientation();
   useRedirectOnOrientation('portrait', id ? `/tournament/${id}` : '');
+  useAutoFullscreen();
   const [hideQr, setHideQr] = useState(false);
 
   // In fullscreen mode (or landscape on a smaller viewport) we want the
@@ -172,7 +173,7 @@ export function TournamentMonitor() {
           <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center">
             <div
               className="text-brass-300/80 uppercase tracking-[0.5em] font-semibold"
-              style={{ fontSize: 'clamp(1rem, 3.4vmin, 2rem)' }}
+              style={{ fontSize: 'clamp(1.2rem, 4.4vmin, 2.6rem)' }}
             >
               Level {clock.level?.level ?? 0}
             </div>
@@ -183,26 +184,26 @@ export function TournamentMonitor() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
                 className="font-display leading-none text-brass-shine mt-2"
-                style={{ fontSize: 'clamp(3rem, 16vmin, 13rem)' }}
+                style={{ fontSize: 'clamp(4rem, 22vmin, 18rem)' }}
               >
                 {clock.level ? `${clock.level.sb}/${clock.level.bb}` : '🏁'}
               </motion.div>
             </AnimatePresence>
             {clock.level?.ante ? (
-              <div className="text-ink-300 mt-1" style={{ fontSize: 'clamp(0.85rem, 2.8vmin, 1.5rem)' }}>
+              <div className="text-ink-300 mt-1" style={{ fontSize: 'clamp(1rem, 3.6vmin, 2rem)' }}>
                 ante {clock.level.ante}
               </div>
             ) : null}
             <motion.div
-              className="font-mono leading-none mt-3 tabular-nums"
-              style={{ fontSize: 'clamp(4.5rem, 38vmin, 24rem)' }}
+              className="font-mono leading-none mt-4 tabular-nums"
+              style={{ fontSize: 'clamp(6rem, 50vmin, 32rem)' }}
               animate={danger ? { color: ['#ffffff', '#f87171', '#ffffff'] } : { color: '#ffffff' }}
               transition={{ duration: 1, repeat: Infinity }}
             >
               {formatDuration(clock.msRemaining)}
             </motion.div>
             {nextLevel && (
-              <div className="text-ink-300 mt-3" style={{ fontSize: 'clamp(1.1rem, 3.4vmin, 2rem)' }}>
+              <div className="text-ink-300 mt-4" style={{ fontSize: 'clamp(1.4rem, 4.4vmin, 2.8rem)' }}>
                 Next: <span className="text-brass-200 font-semibold">{nextLevel.sb}/{nextLevel.bb}</span>
                 {nextLevel.breakAfter ? ' (break)' : ''}
               </div>
@@ -210,17 +211,17 @@ export function TournamentMonitor() {
           </div>
 
           {/* Right: stats stack + payouts (slim to give the clock more room) */}
-          <div className="flex flex-col gap-2 w-[22%] max-w-[260px] min-w-[170px] overflow-hidden">
+          <div className="flex flex-col gap-2 w-[24%] max-w-[320px] min-w-[200px] overflow-hidden">
             <CompactStat label="Players" value={`${alive.length}/${players.length}`} />
             <CompactStat label="Avg stack" value={formatChips(avgStack)} />
             <CompactStat label="Prize pool" value={formatMoney(prizePool, currency)} />
-            <div className="card-felt p-2 flex-1 min-h-0 overflow-y-auto no-scrollbar">
-              <div className="text-[9px] uppercase tracking-widest text-ink-400 mb-1">Payouts</div>
-              <ul className="space-y-1">
+            <div className="card-felt p-3 flex-1 min-h-0 overflow-y-auto no-scrollbar">
+              <div className="uppercase tracking-widest text-ink-400 mb-2" style={{ fontSize: 'clamp(0.6rem, 1.4vmin, 0.85rem)' }}>Payouts</div>
+              <ul className="space-y-1.5">
                 {payouts.map((p) => (
-                  <li key={p.place} className="flex items-center justify-between text-sm">
+                  <li key={p.place} className="flex items-center justify-between gap-2" style={{ fontSize: 'clamp(0.95rem, 2.2vmin, 1.5rem)' }}>
                     <span>{p.place === 1 ? '🥇' : p.place === 2 ? '🥈' : p.place === 3 ? '🥉' : formatPlace(p.place)}</span>
-                    <span className="font-mono text-brass-200">{formatMoney(p.percent, currency)}</span>
+                    <span className="font-mono text-brass-200 tabular-nums">{formatMoney(p.percent, currency)}</span>
                   </li>
                 ))}
               </ul>
@@ -313,23 +314,65 @@ export function TournamentMonitor() {
         </div>
       )}
 
-      {/* End-of-level prompt: shows when timer hits 0 and auto_advance is OFF */}
-      {clock.msRemaining === 0 && tournament.state === 'running' && !tournament.auto_advance &&
-        clock.levelIndex < tournament.blind_structure.length - 1 && (() => {
-          const nextLvl = tournament.blind_structure[clock.levelIndex + 1];
-          return (
-            <button
-              onClick={() => advanceShortcut(1)}
-              className="absolute inset-x-6 top-1/2 -translate-y-1/2 z-30 mx-auto max-w-md rounded-2xl py-6 px-6 shadow-glow font-display text-3xl text-felt-950"
-              style={{ backgroundImage: 'linear-gradient(135deg, rgb(var(--shine-from)) 0%, rgb(var(--shine-mid)) 50%, rgb(var(--shine-to)) 100%)' }}
-            >
-              ▶ Next level
-              <div className="text-xs font-sans uppercase tracking-widest mt-1 opacity-80">
-                {nextLvl?.sb}/{nextLvl?.bb}
-              </div>
-            </button>
-          );
-        })()}
+      {/* End-of-level prompt: shows when timer hits 0 and auto_advance is OFF.
+          Backdrop dims the screen so the CTA is unmissable; pulsing scale +
+          shimmer draws the eye from across the room. */}
+      <AnimatePresence>
+        {clock.msRemaining === 0 && tournament.state === 'running' && !tournament.auto_advance &&
+          clock.levelIndex < tournament.blind_structure.length - 1 && (() => {
+            const nextLvl = tournament.blind_structure[clock.levelIndex + 1];
+            return (
+              <motion.div
+                key="next-level-overlay"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-30 grid place-items-center bg-felt-950/55 backdrop-blur-sm cursor-pointer"
+                onClick={() => advanceShortcut(1)}
+              >
+                <motion.button
+                  initial={{ y: 20, opacity: 0, scale: 0.96 }}
+                  animate={{
+                    y: 0,
+                    opacity: 1,
+                    scale: [1, 1.04, 1],
+                  }}
+                  transition={{
+                    y: { duration: 0.35 },
+                    opacity: { duration: 0.35 },
+                    scale: { duration: 1.6, repeat: Infinity, ease: 'easeInOut' },
+                  }}
+                  onClick={(e) => { e.stopPropagation(); void advanceShortcut(1); }}
+                  className="relative rounded-3xl shadow-glow font-display text-felt-950 overflow-hidden"
+                  style={{
+                    backgroundImage: 'linear-gradient(135deg, rgb(var(--shine-from)) 0%, rgb(var(--shine-mid)) 50%, rgb(var(--shine-to)) 100%)',
+                    paddingInline: 'clamp(2rem, 6vmin, 4.5rem)',
+                    paddingBlock: 'clamp(1.5rem, 5vmin, 3.5rem)',
+                  }}
+                >
+                  {/* Shimmer sweep */}
+                  <motion.span
+                    aria-hidden
+                    className="absolute inset-y-0 -left-1/3 w-1/3 pointer-events-none"
+                    style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent)' }}
+                    animate={{ x: ['0%', '550%'] }}
+                    transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                  <div className="relative flex items-center gap-3 sm:gap-5 leading-none">
+                    <span className="font-mono" style={{ fontSize: 'clamp(2.5rem, 8vmin, 5rem)' }}>▶</span>
+                    <div className="text-left">
+                      <div style={{ fontSize: 'clamp(1.6rem, 5vmin, 3.2rem)' }}>Next level</div>
+                      <div className="font-sans uppercase tracking-widest opacity-80 mt-1" style={{ fontSize: 'clamp(0.8rem, 2.2vmin, 1.4rem)' }}>
+                        {nextLvl?.sb}/{nextLvl?.bb}{nextLvl?.ante ? ` · ante ${nextLvl.ante}` : ''}
+                        {nextLvl?.breakAfter ? ' · break' : ''}
+                      </div>
+                    </div>
+                  </div>
+                </motion.button>
+              </motion.div>
+            );
+          })()}
+      </AnimatePresence>
 
       {/* JOIN — corner badge. Tiny in both orientations so it never covers the
           clock or eats into the layout. Tap header "show QR" to toggle. */}
@@ -355,9 +398,9 @@ export function TournamentMonitor() {
 
 function CompactStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="card-felt px-3 py-2 flex items-center justify-between min-w-0">
-      <div className="text-[10px] uppercase tracking-widest text-ink-400 truncate">{label}</div>
-      <div className="font-display text-brass-shine tabular-nums truncate" style={{ fontSize: 'clamp(0.95rem, 3.5vmin, 1.5rem)' }}>{value}</div>
+    <div className="card-felt px-3 py-2.5 flex items-center justify-between min-w-0 gap-2">
+      <div className="uppercase tracking-widest text-ink-400 truncate" style={{ fontSize: 'clamp(0.65rem, 1.4vmin, 0.95rem)' }}>{label}</div>
+      <div className="font-display text-brass-shine tabular-nums truncate" style={{ fontSize: 'clamp(1.1rem, 4.2vmin, 2rem)' }}>{value}</div>
     </div>
   );
 }

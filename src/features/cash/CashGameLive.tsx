@@ -31,11 +31,13 @@ export function CashGameLive() {
   const [adding, setAdding] = useState(false);
   const [guestName, setGuestName] = useState('');
   const [defaultBuyIn, setDefaultBuyIn] = useState(500);
+  const [seatingFor, setSeatingFor] = useState<{ profile_id?: string; guest?: string; name: string } | null>(null);
+  const [seatAmount, setSeatAmount] = useState(500);
+  const [seatFromBank, setSeatFromBank] = useState(false);
   const [topUpFor, setTopUpFor] = useState<CashGamePlayer | null>(null);
   const [topUpAmount, setTopUpAmount] = useState(500);
   const [cashOutFor, setCashOutFor] = useState<CashGamePlayer | null>(null);
   const [cashOutAmount, setCashOutAmount] = useState(0);
-  const [fromBank, setFromBank] = useState(false);
   const [topUpFromBank, setTopUpFromBank] = useState(false);
   const [leaveInBank, setLeaveInBank] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
@@ -110,9 +112,22 @@ export function CashGameLive() {
 
   const settlements = computeSettlements(positions);
 
-  const addPlayer = async (profile_id?: string, guest?: string) => {
-    if (!id || !game) return;
-    setGuestName(''); setAdding(false); setFromBank(false);
+  const openSeating = (profile_id: string | undefined, guest: string | undefined, name: string) => {
+    setSeatAmount(defaultBuyIn);
+    setSeatFromBank(false);
+    setSeatingFor({ profile_id, guest, name });
+  };
+
+  const confirmSeat = async () => {
+    if (!seatingFor || !id || !game) return;
+    const { profile_id, guest } = seatingFor;
+    const amount = seatAmount;
+    const useBank = seatFromBank;
+    setSeatingFor(null);
+    setGuestName('');
+    setAdding(false);
+    setDefaultBuyIn(amount);
+
     const { data: p } = await supabase.from('cash_game_players').insert({
       cash_game_id: id,
       profile_id: profile_id ?? null,
@@ -120,14 +135,14 @@ export function CashGameLive() {
     }).select().single();
     if (p) {
       addPlayerLocal(p as CashGamePlayer);
-      if (defaultBuyIn > 0) {
+      if (amount > 0) {
         const { data: bi } = await supabase.from('cash_buy_ins').insert({
-          cash_game_player_id: p.id, amount: defaultBuyIn,
+          cash_game_player_id: p.id, amount,
         }).select().single();
         if (bi) addBuyIn(bi as import('@/types/db').CashBuyIn);
-        if (fromBank) {
+        if (useBank) {
           await recordBankTx({
-            profile_id, guest_name: guest, amount: -defaultBuyIn,
+            profile_id, guest_name: guest, amount: -amount,
             currency: game.currency, kind: 'cash_buy_in',
             ref_table: 'cash_games', ref_id: id,
             note: `Buy-in for ${game.name}`,
@@ -385,10 +400,7 @@ export function CashGameLive() {
         </Button>
       </Sheet>
 
-      <Sheet open={adding} onClose={() => { setAdding(false); setFromBank(false); setGuestName(''); }} title="Add player">
-        <Input label="Default buy-in" type="number" value={defaultBuyIn} suffix={currency}
-          onChange={(e) => setDefaultBuyIn(Number(e.target.value))} />
-
+      <Sheet open={adding} onClose={() => { setAdding(false); setGuestName(''); }} title="Add player">
         {(() => {
           const seatedProfileIds = new Set(players.map((p) => p.profile_id).filter(Boolean) as string[]);
           const seatedGuestNames = new Set(players.map((p) => p.guest_name?.toLowerCase()).filter(Boolean) as string[]);
@@ -396,13 +408,13 @@ export function CashGameLive() {
           const availableGuests = recentGuests.filter((n) => !seatedGuestNames.has(n.toLowerCase()));
           if (availableProfiles.length === 0 && availableGuests.length === 0) return null;
           return (
-            <div className="mt-4">
+            <div>
               <p className="label">Tap to seat — same person, same stats & bank</p>
               <div className="flex flex-wrap gap-1.5">
                 {availableProfiles.map((p) => (
                   <button
                     key={p.id}
-                    onClick={() => addPlayer(p.id)}
+                    onClick={() => openSeating(p.id, undefined, p.display_name)}
                     className="pill bg-felt-900/60 border border-felt-700 hover:border-brass-500/40 transition"
                     title="Registered member — links to their account"
                   >
@@ -412,7 +424,7 @@ export function CashGameLive() {
                 {availableGuests.map((name) => (
                   <button
                     key={name}
-                    onClick={() => addPlayer(undefined, name)}
+                    onClick={() => openSeating(undefined, name, name)}
                     className="pill bg-felt-900/60 border border-felt-700 hover:border-brass-500/40 transition"
                     title="Recurring guest — links to their bank balance under this name"
                   >
@@ -426,9 +438,51 @@ export function CashGameLive() {
 
         <Input label="Or add a new guest" value={guestName} onChange={(e) => setGuestName(e.target.value)}
           placeholder="e.g. Lars" className="mt-3" />
-        <BankToggle on={fromBank} setOn={setFromBank} mode="from" amount={defaultBuyIn} currency={currency} />
-        <Button full onClick={() => addPlayer(undefined, guestName.trim())} className="mt-4" disabled={!guestName.trim()}>
-          Seat new guest with {formatMoney(defaultBuyIn, currency)}{fromBank ? ' · from 🏦' : ''}
+        <Button
+          full
+          onClick={() => {
+            const n = guestName.trim();
+            if (!n) return;
+            openSeating(undefined, n, n);
+          }}
+          className="mt-4"
+          disabled={!guestName.trim()}
+        >
+          Continue with {guestName.trim() || '…'}
+        </Button>
+      </Sheet>
+
+      <Sheet
+        open={!!seatingFor}
+        onClose={() => { setSeatingFor(null); setSeatFromBank(false); }}
+        title={seatingFor ? `Buy-in for ${seatingFor.name}` : ''}
+      >
+        <Input
+          label="Buy-in amount"
+          type="number"
+          value={seatAmount}
+          suffix={currency}
+          onChange={(e) => setSeatAmount(Number(e.target.value))}
+        />
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {[200, 500, 1000, 1500, 2000].map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => setSeatAmount(preset)}
+              className={`pill border transition ${
+                seatAmount === preset
+                  ? 'bg-brass-500/20 border-brass-500/40 text-brass-100'
+                  : 'bg-felt-900/60 border-felt-700 hover:border-brass-500/40'
+              }`}
+            >
+              {formatMoney(preset, currency)}
+            </button>
+          ))}
+        </div>
+        <BankToggle on={seatFromBank} setOn={setSeatFromBank} mode="from" amount={seatAmount} currency={currency} />
+        <Button full onClick={confirmSeat} className="mt-4" disabled={seatAmount < 0}>
+          Seat {seatingFor?.name ?? ''} for {formatMoney(seatAmount, currency)}{seatFromBank ? ' · from 🏦' : ''}
         </Button>
       </Sheet>
 

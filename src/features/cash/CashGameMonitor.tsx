@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useCashGame } from '@/hooks/useCashGame';
 import { useSettings } from '@/store/settings';
 import { useT } from '@/lib/i18n';
-import { useFullscreen, useOrientation, useRedirectOnOrientation } from '@/hooks/useFullscreen';
+import { useFullscreen, useOrientation, useRedirectOnOrientation, useAutoFullscreen } from '@/hooks/useFullscreen';
 import { requestWakeLock, releaseWakeLock } from '@/lib/wakeLock';
 import { QRCode } from '@/components/QRCode';
 import { formatMoney } from '@/lib/format';
@@ -37,6 +37,7 @@ export function MonitorBody({ cashGameId, spectator = false }: MonitorBodyProps)
   const { currency } = useSettings();
   const { isFullscreen, toggle: toggleFullscreen } = useFullscreen();
   const orientation = useOrientation();
+  useAutoFullscreen();
   const t = useT();
   const [hideQr, setHideQr] = useState(false);
 
@@ -243,8 +244,8 @@ export function MonitorBody({ cashGameId, spectator = false }: MonitorBodyProps)
         </div>
       )}
 
-      {/* Activity ticker — bottom strip, animates new entries in */}
-      {feed.length > 0 && (
+      {/* Activity ticker — only on portrait; landscape stays clean */}
+      {orientation === 'portrait' && feed.length > 0 && (
         <ActivityTicker feed={feed.slice(0, 4)} currency={currency} t={t} now={now} />
       )}
 
@@ -304,18 +305,18 @@ function HeroDisplay({ hero, totalCards, activeIdx }: { hero: HeroCard | undefin
         className="flex flex-col items-center gap-2 max-w-full px-4"
       >
         <div className="text-brass-300/80 uppercase tracking-[0.5em] font-semibold flex items-center gap-3"
-          style={{ fontSize: 'clamp(0.85rem, 2.6vmin, 1.5rem)' }}>
-          <span style={{ fontSize: 'clamp(1.5rem, 4vmin, 2.5rem)' }}>{hero.emoji}</span>
+          style={{ fontSize: 'clamp(1rem, 3.4vmin, 2rem)' }}>
+          <span style={{ fontSize: 'clamp(1.8rem, 5.5vmin, 3.5rem)' }}>{hero.emoji}</span>
           {hero.label}
         </div>
         <div
           className="font-display leading-none text-brass-shine tabular-nums break-words text-center"
-          style={{ fontSize: 'clamp(2.5rem, 14vmin, 11rem)' }}
+          style={{ fontSize: 'clamp(3.5rem, 22vmin, 18rem)' }}
         >
           {hero.value}
         </div>
         {hero.sub && (
-          <div className="text-ink-300 mt-1 text-center" style={{ fontSize: 'clamp(0.85rem, 2.4vmin, 1.4rem)' }}>
+          <div className="text-ink-300 mt-1 text-center" style={{ fontSize: 'clamp(1rem, 3vmin, 1.8rem)' }}>
             {hero.sub}
           </div>
         )}
