@@ -220,12 +220,12 @@ export function TournamentMonitor() {
                 two display affordances: QR toggle and fullscreen. */}
             <button
               onClick={() => setHideQr((v) => !v)}
-              className="w-9 h-9 grid place-items-center rounded-full bg-felt-800/70 border border-felt-700 text-ink-200"
+              className="w-11 h-11 grid place-items-center rounded-full bg-felt-800/70 border border-felt-700 text-ink-200"
               title={hideQr ? 'Show join QR' : 'Hide join QR'}
             >{hideQr ? '📲' : '🚫'}</button>
             <button
               onClick={toggleFullscreen}
-              className="w-9 h-9 grid place-items-center rounded-full bg-brass-500/20 border border-brass-500/40 text-brass-100"
+              className="w-11 h-11 grid place-items-center rounded-full bg-brass-500/20 border border-brass-500/40 text-brass-100"
               title="Fullscreen (Esc to exit)"
             >⛶</button>
           </div>
@@ -270,35 +270,29 @@ export function TournamentMonitor() {
             >
               Level {clock.level?.level ?? 0}
             </div>
-            {/* Blinds stay perfectly centered on the screen; ante sits as
-                a quiet annotation on the right rail of the same line via
-                absolute positioning so it never offsets the centered text. */}
-            <div className="relative w-full mt-2 grid place-items-center">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={clock.levelIndex}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="font-display leading-none text-brass-shine"
-                  style={{ fontSize: 'clamp(4rem, 22vmin, 18rem)' }}
-                >
-                  {clock.level ? `${clock.level.sb}/${clock.level.bb}` : '🏁'}
-                </motion.div>
-              </AnimatePresence>
-              {clock.level?.ante ? (
-                <span
-                  className="absolute font-sans text-ink-400 lowercase tracking-wide whitespace-nowrap"
-                  style={{
-                    fontSize: 'clamp(0.85rem, 2.4vmin, 1.4rem)',
-                    left: 'calc(50% + clamp(3.5rem, 13vmin, 10rem))',
-                    bottom: 'clamp(0.5rem, 2vmin, 1.4rem)',
-                  }}
-                >
-                  ante {clock.level.ante}
-                </span>
-              ) : null}
-            </div>
+            {/* Blinds centered. The ante sits below them as a quiet
+                annotation — keeps the big number perfectly centered without
+                fighting absolute positioning at every viewport size. */}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={clock.levelIndex}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="font-display leading-none text-brass-shine mt-2"
+                style={{ fontSize: 'clamp(4rem, 22vmin, 18rem)' }}
+              >
+                {clock.level ? `${clock.level.sb}/${clock.level.bb}` : '🏁'}
+              </motion.div>
+            </AnimatePresence>
+            {clock.level?.ante ? (
+              <div
+                className="font-sans text-ink-400 lowercase tracking-wide mt-1"
+                style={{ fontSize: 'clamp(0.95rem, 2.6vmin, 1.5rem)' }}
+              >
+                ante {clock.level.ante}
+              </div>
+            ) : null}
             <motion.div
               className="font-mono leading-none mt-4 tabular-nums"
               style={{ fontSize: 'clamp(6rem, 50vmin, 32rem)' }}
@@ -353,32 +347,26 @@ export function TournamentMonitor() {
             >
               Level {clock.level?.level ?? 0}
             </div>
-            <div className="relative w-full mt-1 grid place-items-center">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={clock.levelIndex}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="font-display leading-none text-brass-shine"
-                  style={{ fontSize: 'clamp(2.75rem, 14vmin, 11rem)' }}
-                >
-                  {clock.level ? `${clock.level.sb}/${clock.level.bb}` : '🏁'}
-                </motion.div>
-              </AnimatePresence>
-              {clock.level?.ante ? (
-                <span
-                  className="absolute font-sans text-ink-400 lowercase tracking-wide whitespace-nowrap"
-                  style={{
-                    fontSize: 'clamp(0.7rem, 2vmin, 1.1rem)',
-                    left: 'calc(50% + clamp(2.4rem, 8.5vmin, 6.5rem))',
-                    bottom: 'clamp(0.3rem, 1.4vmin, 0.9rem)',
-                  }}
-                >
-                  ante {clock.level.ante}
-                </span>
-              ) : null}
-            </div>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={clock.levelIndex}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="font-display leading-none text-brass-shine mt-1"
+                style={{ fontSize: 'clamp(2.75rem, 14vmin, 11rem)' }}
+              >
+                {clock.level ? `${clock.level.sb}/${clock.level.bb}` : '🏁'}
+              </motion.div>
+            </AnimatePresence>
+            {clock.level?.ante ? (
+              <div
+                className="font-sans text-ink-400 lowercase tracking-wide mt-1"
+                style={{ fontSize: 'clamp(0.8rem, 2.2vmin, 1.2rem)' }}
+              >
+                ante {clock.level.ante}
+              </div>
+            ) : null}
             <motion.div
               className="font-mono leading-none mt-3 tabular-nums"
               style={{ fontSize: 'clamp(4.5rem, 24vmin, 18rem)' }}

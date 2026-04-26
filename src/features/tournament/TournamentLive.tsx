@@ -59,8 +59,9 @@ export function TournamentLive() {
   // Mid-tournament ante override on the *current* level only. Toggling/editing
   // patches `tournament.blind_structure[current_level].ante` and writes the
   // whole array back. Keeps original numbers on every other level.
-  const [editingAnte, setEditingAnte] = useState(false);
-  const [anteDraft, setAnteDraft] = useState(0);
+  // Ante is now a binary toggle for the whole tournament. When OFF we strip
+  // antes from every level of blind_structure but keep a snapshot in
+  // localStorage so toggling back ON restores the original numbers.
   const [editPosDraft, setEditPosDraft] = useState<number>(0);
   const [editPrizeDraft, setEditPrizeDraft] = useState<number>(0);
   const [prizeManuallyEdited, setPrizeManuallyEdited] = useState(false);
@@ -206,21 +207,43 @@ export function TournamentLive() {
     patchTournament({ state: 'paused', paused_at: pausedAt });
     await supabase.from('tournaments').update({ state: 'paused', paused_at: pausedAt }).eq('id', tournament.id);
   };
-  const saveAnte = async (newAnte: number) => {
+  // Whether *any* level in the structure currently has a non-zero ante.
+  // That's our ON/OFF reading; no separate flag in the schema.
+  const antesOn = !!tournament?.blind_structure.some((l) => l.ante && l.ante > 0);
+  const toggleAntes = async () => {
     if (!tournament) return;
-    const idx = clock.levelIndex;
-    const next = tournament.blind_structure.map((lvl, i) =>
-      i === idx ? { ...lvl, ante: newAnte > 0 ? newAnte : undefined } : lvl,
-    );
-    patchTournament({ blind_structure: next });
-    setEditingAnte(false);
+    const snapKey = `home-pot:antes-snapshot:${tournament.id}`;
+    let nextStructure: typeof tournament.blind_structure;
+    if (antesOn) {
+      // Turning OFF: snapshot the current antes, then zero them.
+      const snap = tournament.blind_structure.map((l) => l.ante ?? 0);
+      try { localStorage.setItem(snapKey, JSON.stringify(snap)); } catch { /* noop */ }
+      nextStructure = tournament.blind_structure.map((l) => ({ ...l, ante: undefined }));
+    } else {
+      // Turning ON: restore from snapshot if we have one, otherwise default
+      // each level's ante to 1/8 of its BB rounded to a sensible chip step.
+      let snap: number[] | null = null;
+      try { snap = JSON.parse(localStorage.getItem(snapKey) ?? 'null'); } catch { snap = null; }
+      const fallback = (bb: number): number => {
+        const target = bb / 8;
+        const step = bb >= 800 ? 100 : bb >= 200 ? 25 : bb >= 50 ? 10 : 5;
+        return Math.max(step, Math.round(target / step) * step);
+      };
+      nextStructure = tournament.blind_structure.map((l, i) => ({
+        ...l,
+        ante: (snap && snap[i] && snap[i] > 0) ? snap[i] : fallback(l.bb),
+      }));
+    }
+    patchTournament({ blind_structure: nextStructure });
     const { error } = await supabase.from('tournaments')
-      .update({ blind_structure: next })
+      .update({ blind_structure: nextStructure })
       .eq('id', tournament.id);
     if (error) {
       // eslint-disable-next-line no-console
-      console.error('[TournamentLive] saveAnte failed:', error);
-      toast(error.message ?? 'Could not save ante', 'error');
+      console.error('[TournamentLive] toggleAntes failed:', error);
+      toast(error.message ?? 'Could not save antes', 'error');
+      // Roll back optimistic patch since the DB write failed.
+      patchTournament({ blind_structure: tournament.blind_structure });
     }
   };
   const advanceLevel = async (by: number) => {
@@ -466,18 +489,16 @@ export function TournamentLive() {
               {clock.level ? `${clock.level.sb}/${clock.level.bb}` : '—'}
             </div>
             <button
-              onClick={() => {
-                setAnteDraft(clock.level?.ante ?? 0);
-                setEditingAnte(true);
-              }}
-              className={`mt-1.5 text-[10px] uppercase tracking-widest font-semibold rounded-full border px-2.5 py-1 transition ${
-                clock.level?.ante
+              onClick={() => void toggleAntes()}
+              className={`mt-1.5 inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-semibold rounded-full border px-2.5 py-1 transition min-h-[28px] ${
+                antesOn
                   ? 'bg-brass-500/15 border-brass-500/40 text-brass-100 hover:bg-brass-500/25'
                   : 'bg-felt-800/60 border-felt-700 text-ink-300 hover:border-brass-500/40 hover:text-brass-200'
               }`}
-              title={clock.level?.ante ? 'Tap to edit or remove ante' : 'Tap to add an ante to this level'}
+              title={antesOn ? 'Antes ON — tap to turn off' : 'Antes OFF — tap to turn on'}
             >
-              {clock.level?.ante ? `ante ${clock.level.ante} ✏️` : '+ add ante'}
+              <span className={`block w-1.5 h-1.5 rounded-full ${antesOn ? 'bg-brass-300 shadow-[0_0_6px_rgba(236,208,117,0.8)]' : 'bg-ink-500'}`} />
+              {antesOn ? `ante ${clock.level?.ante ?? 0} · on` : 'ante off'}
             </button>
           </div>
           <div>
@@ -680,28 +701,6 @@ export function TournamentLive() {
           </ul>
         </Card>
       )}
-
-      <Sheet
-        open={editingAnte}
-        onClose={() => setEditingAnte(false)}
-        title={`Ante · Level ${clock.level?.level ?? '—'}`}
-      >
-        <p className="text-ink-300 text-sm mb-3">
-          Edits the ante on the current level only. Set 0 (or tap "Remove") to
-          play this level without antes. Other levels are unaffected.
-        </p>
-        <NumberInput
-          value={anteDraft}
-          min={0}
-          suffix="chips"
-          onValueChange={setAnteDraft}
-          autoFocus
-        />
-        <div className="flex gap-2 mt-4">
-          <Button variant="ghost" full onClick={() => void saveAnte(0)}>Remove ante</Button>
-          <Button full onClick={() => void saveAnte(anteDraft)}>Save</Button>
-        </div>
-      </Sheet>
 
       <Sheet
         open={!!editingPlayer}

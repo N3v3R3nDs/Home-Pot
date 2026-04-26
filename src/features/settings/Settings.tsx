@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { NumberInput } from '@/components/ui/NumberInput';
@@ -39,6 +40,7 @@ export function Settings() {
   const [defDraft, setDefDraft] = useState(tournamentDefaults);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [defSavedAt, setDefSavedAt] = useState<number | null>(null);
+  const [subtab, setSubtab] = useState<'settings' | 'admin'>('settings');
   const saveDefaults = () => {
     setTournamentDefaults(defDraft);
     setDefSavedAt(Date.now());
@@ -147,7 +149,7 @@ export function Settings() {
     void load();
     void loadGuests();
     // Refresh members + guest list whenever profiles or player rows change.
-    const ch = supabase.channel('members')
+    const ch = supabase.channel(`members:${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => { void load(); void loadGuests(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_players' }, () => { void loadGuests(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_game_players' }, () => { void loadGuests(); })
@@ -221,10 +223,14 @@ export function Settings() {
     await updateProfile({ display_name: name, avatar_emoji: emoji });
   };
 
-  return (
-    <div className="space-y-4">
-      <h1 className="font-display text-3xl text-brass-shine">{t('settings')}</h1>
+  const meIsAdmin = members.find((x) => x.id === user?.id)?.is_admin ?? false;
 
+  // Sections grouped by audience. Admin-only stuff gets pulled out of the main
+  // settings list so non-admins (and admins doing routine settings work) aren't
+  // staring at members directories and season admin every time they want to
+  // toggle the language.
+  const settingsSection = (
+    <>
       <Card>
         <p className="label">{t('language')}</p>
         <div className="grid grid-cols-2 gap-2">
@@ -299,86 +305,6 @@ export function Settings() {
             <span className={`absolute top-1 w-6 h-6 rounded-full bg-white transition ${largeText ? 'left-7' : 'left-1'}`} />
           </button>
         </div>
-      </Card>
-
-      {/* Advanced — collapsed by default. Mirrors the wizard's per-format
-          field visibility so what you set here is what shows in step 1. */}
-      <Card>
-        <button
-          onClick={() => setShowAdvanced((v) => !v)}
-          className="w-full flex items-center justify-between text-left"
-        >
-          <span>
-            <div className="label !mb-0.5">⚙️ Advanced — tournament defaults</div>
-            <div className="text-[11px] text-ink-400">{showAdvanced ? 'Tap to collapse.' : 'Pre-fill values for the wizard. Tap to expand.'}</div>
-          </span>
-          <span className="text-ink-400 text-lg">{showAdvanced ? '▾' : '▸'}</span>
-        </button>
-        {showAdvanced && (() => {
-          const type = defDraft.tournamentType;
-          return (
-            <div className="mt-4">
-              <p className="label">Default format</p>
-              <div className="grid grid-cols-4 gap-1.5 mb-3">
-                {([
-                  ['rebuy', 'Re-buy', '🔁'],
-                  ['freezeout', 'Freezeout', '🧊'],
-                  ['reentry', 'Re-entry', '↻'],
-                  ['bounty', 'Bounty', '💀'],
-                ] as const).map(([id, label, ico]) => (
-                  <button
-                    key={id}
-                    onClick={() => {
-                      // Mirror the wizard: switching format zeros the fields
-                      // that don't apply, so what you save matches what the
-                      // wizard will show on step 1.
-                      const next = { ...defDraft, tournamentType: id };
-                      if (id === 'rebuy') next.addonAmount = 0;
-                      else if (id === 'freezeout') { next.rebuyAmount = 0; next.addonAmount = 0; }
-                      else if (id === 'bounty' && next.bountyAmount === 0) {
-                        next.bountyAmount = Math.max(50, Math.round(next.buyIn * 0.25));
-                      }
-                      setDefDraft(next);
-                    }}
-                    className={`p-2 rounded-xl border text-center text-xs ${
-                      type === id ? 'bg-brass-500/15 border-brass-500/50 text-brass-100' : 'bg-felt-900/60 border-felt-700 text-ink-300'
-                    }`}
-                  >
-                    <div className="text-base">{ico}</div>
-                    <div className="font-semibold mt-0.5">{label}</div>
-                  </button>
-                ))}
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <NumberInput label="Buy-in" value={defDraft.buyIn} suffix={currency} min={0} required
-                  onValueChange={(n) => setDefDraft({ ...defDraft, buyIn: n })} />
-                {type === 'bounty' && (
-                  <NumberInput label="Bounty" value={defDraft.bountyAmount} suffix={currency} min={0}
-                    onValueChange={(n) => setDefDraft({ ...defDraft, bountyAmount: n })} />
-                )}
-                {(type === 'rebuy' || type === 'reentry') && (
-                  <NumberInput label="Re-buy" value={defDraft.rebuyAmount} suffix={currency} min={0}
-                    onValueChange={(n) => setDefDraft({ ...defDraft, rebuyAmount: n })} />
-                )}
-                {type !== 'rebuy' && type !== 'freezeout' && (
-                  <NumberInput label="Add-on" value={defDraft.addonAmount} suffix={currency} min={0}
-                    onValueChange={(n) => setDefDraft({ ...defDraft, addonAmount: n })} />
-                )}
-                {(type === 'rebuy' || type === 'reentry') && (
-                  <NumberInput label="Re-buys until level" value={defDraft.rebuysUntilLevel} min={0}
-                    onValueChange={(n) => setDefDraft({ ...defDraft, rebuysUntilLevel: n })} />
-                )}
-                <NumberInput label="Rake %" value={defDraft.rakePercent} suffix="%" min={0} max={100} decimals
-                  onValueChange={(n) => setDefDraft({ ...defDraft, rakePercent: n })} />
-                <NumberInput label="Dealer tip %" value={defDraft.dealerTipPercent} suffix="%" min={0} max={100} decimals
-                  onValueChange={(n) => setDefDraft({ ...defDraft, dealerTipPercent: n })} />
-              </div>
-              <Button full className="mt-3" onClick={saveDefaults}>
-                {defSavedAt ? '✓ Saved' : 'Save defaults'}
-              </Button>
-            </div>
-          );
-        })()}
       </Card>
 
       <Card>
@@ -460,6 +386,100 @@ export function Settings() {
       </Card>
 
       <Card>
+        <Link to="/status" className="block text-center text-sm text-ink-300 hover:text-brass-200">
+          🩺 System status
+        </Link>
+      </Card>
+
+      <Card>
+        <Button variant="danger" full onClick={confirmSignOut}>Sign out</Button>
+      </Card>
+    </>
+  );
+
+  const adminSection = (
+    <>
+      {/* Advanced — collapsed by default. Mirrors the wizard's per-format
+          field visibility so what you set here is what shows in step 1. */}
+      <Card>
+        <button
+          onClick={() => setShowAdvanced((v) => !v)}
+          className="w-full flex items-center justify-between text-left"
+        >
+          <span>
+            <div className="label !mb-0.5">⚙️ Advanced — tournament defaults</div>
+            <div className="text-[11px] text-ink-400">{showAdvanced ? 'Tap to collapse.' : 'Pre-fill values for the wizard. Tap to expand.'}</div>
+          </span>
+          <span className="text-ink-400 text-lg">{showAdvanced ? '▾' : '▸'}</span>
+        </button>
+        {showAdvanced && (() => {
+          const type = defDraft.tournamentType;
+          return (
+            <div className="mt-4">
+              <p className="label">Default format</p>
+              <div className="grid grid-cols-4 gap-1.5 mb-3">
+                {([
+                  ['rebuy', 'Re-buy', '🔁'],
+                  ['freezeout', 'Freezeout', '🧊'],
+                  ['reentry', 'Re-entry', '↻'],
+                  ['bounty', 'Bounty', '💀'],
+                ] as const).map(([id, label, ico]) => (
+                  <button
+                    key={id}
+                    onClick={() => {
+                      // Mirror the wizard: switching format zeros the fields
+                      // that don't apply, so what you save matches what the
+                      // wizard will show on step 1.
+                      const next = { ...defDraft, tournamentType: id };
+                      if (id === 'rebuy') next.addonAmount = 0;
+                      else if (id === 'freezeout') { next.rebuyAmount = 0; next.addonAmount = 0; }
+                      else if (id === 'bounty' && next.bountyAmount === 0) {
+                        next.bountyAmount = Math.max(50, Math.round(next.buyIn * 0.25));
+                      }
+                      setDefDraft(next);
+                    }}
+                    className={`p-2 rounded-xl border text-center text-xs ${
+                      type === id ? 'bg-brass-500/15 border-brass-500/50 text-brass-100' : 'bg-felt-900/60 border-felt-700 text-ink-300'
+                    }`}
+                  >
+                    <div className="text-base">{ico}</div>
+                    <div className="font-semibold mt-0.5">{label}</div>
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <NumberInput label="Buy-in" value={defDraft.buyIn} suffix={currency} min={0} required
+                  onValueChange={(n) => setDefDraft({ ...defDraft, buyIn: n })} />
+                {type === 'bounty' && (
+                  <NumberInput label="Bounty" value={defDraft.bountyAmount} suffix={currency} min={0}
+                    onValueChange={(n) => setDefDraft({ ...defDraft, bountyAmount: n })} />
+                )}
+                {(type === 'rebuy' || type === 'reentry') && (
+                  <NumberInput label="Re-buy" value={defDraft.rebuyAmount} suffix={currency} min={0}
+                    onValueChange={(n) => setDefDraft({ ...defDraft, rebuyAmount: n })} />
+                )}
+                {type !== 'rebuy' && type !== 'freezeout' && (
+                  <NumberInput label="Add-on" value={defDraft.addonAmount} suffix={currency} min={0}
+                    onValueChange={(n) => setDefDraft({ ...defDraft, addonAmount: n })} />
+                )}
+                {(type === 'rebuy' || type === 'reentry') && (
+                  <NumberInput label="Re-buys until level" value={defDraft.rebuysUntilLevel} min={0}
+                    onValueChange={(n) => setDefDraft({ ...defDraft, rebuysUntilLevel: n })} />
+                )}
+                <NumberInput label="Rake %" value={defDraft.rakePercent} suffix="%" min={0} max={100} decimals
+                  onValueChange={(n) => setDefDraft({ ...defDraft, rakePercent: n })} />
+                <NumberInput label="Dealer tip %" value={defDraft.dealerTipPercent} suffix="%" min={0} max={100} decimals
+                  onValueChange={(n) => setDefDraft({ ...defDraft, dealerTipPercent: n })} />
+              </div>
+              <Button full className="mt-3" onClick={saveDefaults}>
+                {defSavedAt ? '✓ Saved' : 'Save defaults'}
+              </Button>
+            </div>
+          );
+        })()}
+      </Card>
+
+      <Card>
         <p className="label">Members</p>
         <p className="text-xs text-ink-400 mb-3">
           Tap a quick-join member to reset their PIN. Their account, stats and bank balance are preserved — only the PIN changes.
@@ -467,7 +487,6 @@ export function Settings() {
         <ul className="divide-y divide-felt-800">
           {members.filter((m) => !m.is_anonymous).map((m) => {
             const isMe = m.id === user?.id;
-            const meIsAdmin = members.find((x) => x.id === user?.id)?.is_admin ?? false;
             return (
               <li key={m.id} className="flex items-center justify-between py-2.5">
                 <span className="flex items-center gap-3">
@@ -519,7 +538,6 @@ export function Settings() {
             real PIN members. After promotion their existing tournament/cash
             history is re-pointed to the new profile so stats roll forward. */}
         {guests.length > 0 && (() => {
-          const meIsAdmin = members.find((x) => x.id === user?.id)?.is_admin ?? false;
           // Hide guests whose name already matches a registered member.
           const memberNames = new Set(members.map((m) => m.display_name.toLowerCase()));
           const orphans = guests.filter((g) => !memberNames.has(g.name.toLowerCase()));
@@ -573,16 +591,52 @@ export function Settings() {
       <SeasonAdmin />
 
       <ActivityFeed />
+    </>
+  );
 
-      <Card>
-        <Link to="/status" className="block text-center text-sm text-ink-300 hover:text-brass-200">
-          🩺 System status
-        </Link>
-      </Card>
+  return (
+    <div className="space-y-4">
+      <h1 className="font-display text-3xl text-brass-shine">{t('settings')}</h1>
 
-      <Card>
-        <Button variant="danger" full onClick={confirmSignOut}>Sign out</Button>
-      </Card>
+      {meIsAdmin ? (
+        <>
+          {/* Modern segmented control: single pill container, active subtab
+              has a brass-glow background that animates between positions via
+              framer's shared-layout. Mirrors the History page tab style. */}
+          <div className="relative inline-flex w-full bg-felt-900/60 border border-felt-700 rounded-2xl p-1">
+            {(['settings', 'admin'] as const).map((id) => {
+              const active = subtab === id;
+              const label = id === 'settings' ? 'Settings' : 'Admin';
+              const icon = id === 'settings' ? '⚙️' : '🛡️';
+              return (
+                <button
+                  key={id}
+                  onClick={() => setSubtab(id)}
+                  className={`relative flex-1 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                    active ? 'text-brass-100' : 'text-ink-300 hover:text-ink-100'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="settings-subtab-pill"
+                      className="absolute inset-0 rounded-xl bg-brass-500/20 border border-brass-500/40 shadow-glow"
+                      transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                    />
+                  )}
+                  <span className="relative flex items-center justify-center gap-1.5">
+                    <span className="text-base">{icon}</span>
+                    <span className="truncate">{label}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {subtab === 'settings' ? settingsSection : adminSection}
+        </>
+      ) : (
+        settingsSection
+      )}
 
       <Sheet open={!!resetting} onClose={() => { setResetting(null); setNewPin(''); setResetMsg(null); }}
              title={resetting ? `Reset PIN for ${resetting.display_name}` : ''}>

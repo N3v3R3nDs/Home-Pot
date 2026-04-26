@@ -28,6 +28,7 @@ export function AmbientBackdrop({ variant = 'felt', density = 'normal' }: Ambien
 
     let raf = 0;
     let cancelled = false;
+    let paused = typeof document !== 'undefined' && document.hidden;
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
@@ -55,6 +56,14 @@ export function AmbientBackdrop({ variant = 'felt', density = 'normal' }: Ambien
 
     const tick = () => {
       if (cancelled) return;
+      // Skip rendering when the tab is hidden or the canvas isn't laid out
+      // (e.g. on a route that isn't currently mounted into the DOM tree).
+      // Saves a Canvas paint per frame on backgrounded TVs and second-tab
+      // browsers.
+      if (paused || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
       ctx.clearRect(0, 0, w, h);
@@ -77,10 +86,14 @@ export function AmbientBackdrop({ variant = 'felt', density = 'normal' }: Ambien
     };
     raf = requestAnimationFrame(tick);
 
+    const onVisibility = () => { paused = document.hidden; };
+    document.addEventListener('visibilitychange', onVisibility);
+
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [variant, density]);
 

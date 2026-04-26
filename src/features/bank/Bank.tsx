@@ -49,7 +49,7 @@ export function Bank() {
       setProfileMap(Object.fromEntries((profs ?? []).map((p) => [p.id, p as Profile])));
     };
     load();
-    const ch = supabase.channel('bank').on('postgres_changes',
+    const ch = supabase.channel(`bank:${crypto.randomUUID()}`).on('postgres_changes',
       { event: '*', schema: 'public', table: 'bank_transactions' }, load).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);

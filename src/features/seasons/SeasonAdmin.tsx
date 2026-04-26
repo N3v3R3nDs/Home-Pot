@@ -29,7 +29,7 @@ export function SeasonAdmin() {
       setSeasons((data ?? []) as Season[]);
     };
     load();
-    const ch = supabase.channel('seasons').on('postgres_changes',
+    const ch = supabase.channel(`seasons:${crypto.randomUUID()}`).on('postgres_changes',
       { event: '*', schema: 'public', table: 'seasons' }, load).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);

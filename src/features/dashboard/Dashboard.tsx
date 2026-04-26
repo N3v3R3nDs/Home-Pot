@@ -40,10 +40,14 @@ export function Dashboard() {
   const [tickNow, setTickNow] = useState(() => Date.now());
 
   // Re-render every second so the live timer on tournament cards counts down.
+  // Only ticks when there's actually a live tournament — avoids 1Hz wakeups
+  // (and battery drain) for users sitting on an empty dashboard.
+  const liveCount = tournaments.filter((t) => t.state === 'running').length;
   useEffect(() => {
+    if (liveCount === 0) return;
     const id = setInterval(() => setTickNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [liveCount]);
 
   const endIt = async () => {
     if (!acting) return;
@@ -81,7 +85,7 @@ export function Dashboard() {
     load();
 
     // Reconcile from realtime payloads — instant updates, no extra queries.
-    const ch = supabase.channel('dashboard')
+    const ch = supabase.channel(`dashboard:${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tournaments' }, (p) => {
         const row = (p.new ?? p.old) as Tournament;
         setTournaments((prev) => {

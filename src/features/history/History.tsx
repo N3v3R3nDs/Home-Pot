@@ -63,7 +63,7 @@ export function History() {
       setSeasons((data ?? []) as Season[]);
     };
     load();
-    const ch = supabase.channel('history-seasons')
+    const ch = supabase.channel(`history-seasons:${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'seasons' }, load).subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -179,7 +179,7 @@ export function History() {
     const matchSeason = <T extends { season_id: string | null }>(row: T) =>
       !activeSeasonId || row.season_id === activeSeasonId;
 
-    const ch = supabase.channel('history')
+    const ch = supabase.channel(`history:${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tournaments' }, (p) => {
         const row = (p.new ?? p.old) as Tournament;
         setTournaments((prev) => {

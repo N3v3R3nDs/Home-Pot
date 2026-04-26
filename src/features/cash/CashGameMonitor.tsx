@@ -230,12 +230,12 @@ export function MonitorBody({ cashGameId, spectator = false }: MonitorBodyProps)
             )}
             <button
               onClick={() => setHideQr((v) => !v)}
-              className="w-9 h-9 grid place-items-center rounded-full bg-felt-800/70 border border-felt-700 text-ink-200"
+              className="w-11 h-11 grid place-items-center rounded-full bg-felt-800/70 border border-felt-700 text-ink-200"
               title={hideQr ? t('showQr') : t('hideQr')}
             >{hideQr ? '📲' : '🚫'}</button>
             <button
               onClick={toggleFullscreen}
-              className="w-9 h-9 grid place-items-center rounded-full bg-brass-500/20 border border-brass-500/40 text-brass-100"
+              className="w-11 h-11 grid place-items-center rounded-full bg-brass-500/20 border border-brass-500/40 text-brass-100"
               title={t('fullscreen')}
             >⛶</button>
           </div>

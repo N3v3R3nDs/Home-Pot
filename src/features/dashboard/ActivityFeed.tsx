@@ -73,7 +73,7 @@ export function ActivityFeed() {
       setDeletedRefIds(dead);
     };
     load();
-    const ch = supabase.channel('audit_feed')
+    const ch = supabase.channel(`audit_feed:${crypto.randomUUID()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_log' },
         (p) => setRows((prev) => [p.new as AuditRow, ...prev].slice(0, 20)))
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'audit_log' },
