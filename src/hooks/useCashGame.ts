@@ -17,11 +17,14 @@ export function useCashGame(cashGameId: string | undefined) {
   const [profileMap, setProfileMap] = useState<Record<string, Profile>>({});
   const [loading, setLoading] = useState(true);
 
-  // Initial load + realtime subscription
+  // Initial load + realtime subscription. We fetch a fresh snapshot whenever
+  // we (re)mount or the tab becomes visible again, so stale data from a
+  // backgrounded monitor / a missed realtime event always corrects itself.
   useEffect(() => {
     if (!cashGameId) return;
     let cancelled = false;
-    const load = async () => {
+
+    const fetchSnapshot = async () => {
       const [{ data: g }, { data: ps }] = await Promise.all([
         supabase.from('cash_games').select('*').eq('id', cashGameId).maybeSingle(),
         supabase.from('cash_game_players').select('*').eq('cash_game_id', cashGameId).order('created_at'),
@@ -33,12 +36,18 @@ export function useCashGame(cashGameId: string | undefined) {
       if (playerIds.length) {
         const { data: bi } = await supabase.from('cash_buy_ins').select('*').in('cash_game_player_id', playerIds);
         if (!cancelled) setBuyIns((bi ?? []) as CashBuyIn[]);
+      } else if (!cancelled) {
+        setBuyIns([]);
       }
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     };
-    load();
+    void fetchSnapshot();
 
-    const ch = supabase.channel(`cash:${cashGameId}`)
+    // Unique channel name per mount — two views (live + monitor) on the same
+    // client must NOT share a topic, otherwise a stale subscription left
+    // behind by an unmount-in-progress can swallow events from the new one.
+    const channelName = `cash:${cashGameId}:${Math.random().toString(36).slice(2, 10)}`;
+    const ch = supabase.channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_games', filter: `id=eq.${cashGameId}` },
         (p) => {
           if (p.eventType === 'DELETE') setGame(null);
@@ -65,13 +74,28 @@ export function useCashGame(cashGameId: string | undefined) {
               const next = p.new as CashBuyIn;
               return prev.some((x) => x.id === next.id) ? prev : [...prev, next];
             }
+            if (p.eventType === 'UPDATE') return prev.map((x) => x.id === (p.new as CashBuyIn).id ? (p.new as CashBuyIn) : x);
             if (p.eventType === 'DELETE') return prev.filter((x) => x.id !== (p.old as CashBuyIn).id);
             return prev;
           });
         })
       .subscribe();
 
-    return () => { cancelled = true; supabase.removeChannel(ch); };
+    // Resync on tab focus (handles a TV that briefly slept, or the live
+    // making changes while we were on monitor). Realtime drops events on
+    // disconnect, so a fresh snapshot is the safety net.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void fetchSnapshot();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+      supabase.removeChannel(ch);
+    };
   }, [cashGameId]);
 
   // Keep profileMap in sync with the set of profile_ids we've seen — handles

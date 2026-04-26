@@ -21,10 +21,14 @@ export function useTournament(tournamentId: string | undefined) {
       setPlayers((ps ?? []) as TournamentPlayer[]);
       setLoading(false);
     };
-    load();
+    void load();
 
+    // Unique channel name per mount — when navigating between live and monitor
+    // on the same client, two effects can briefly overlap. Sharing a topic
+    // name lets the stale subscription swallow events from the fresh one.
+    const channelName = `tournament:${tournamentId}:${Math.random().toString(36).slice(2, 10)}`;
     const channel = supabase
-      .channel(`tournament:${tournamentId}`)
+      .channel(channelName)
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'tournaments', filter: `id=eq.${tournamentId}` },
         (payload) => {
@@ -35,7 +39,10 @@ export function useTournament(tournamentId: string | undefined) {
         { event: '*', schema: 'public', table: 'tournament_players', filter: `tournament_id=eq.${tournamentId}` },
         (payload) => {
           setPlayers((prev) => {
-            if (payload.eventType === 'INSERT') return [...prev, payload.new as TournamentPlayer];
+            if (payload.eventType === 'INSERT') {
+              const next = payload.new as TournamentPlayer;
+              return prev.some((p) => p.id === next.id) ? prev : [...prev, next];
+            }
             if (payload.eventType === 'UPDATE') return prev.map((p) => p.id === (payload.new as TournamentPlayer).id ? payload.new as TournamentPlayer : p);
             if (payload.eventType === 'DELETE') return prev.filter((p) => p.id !== (payload.old as TournamentPlayer).id);
             return prev;
@@ -43,7 +50,20 @@ export function useTournament(tournamentId: string | undefined) {
         })
       .subscribe();
 
-    return () => { cancelled = true; supabase.removeChannel(channel); };
+    // Resync on tab/window focus — covers a backgrounded monitor that slept
+    // through realtime events, and the rotation handoff between live/monitor.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+      supabase.removeChannel(channel);
+    };
   }, [tournamentId]);
 
   // Optimistic helpers — apply a partial patch locally so UI updates instantly.

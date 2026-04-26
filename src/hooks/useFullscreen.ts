@@ -61,65 +61,43 @@ function isPwaStandalone(): boolean {
 }
 
 /**
- * Best-effort "always fullscreen" for monitor views.
+ * Best-effort fullscreen for monitor views.
  *
- * - In PWA standalone mode, the app is already chrome-less; we no-op.
- * - In a regular browser tab, we try to enter fullscreen on mount, on every
- *   user click anywhere on the page (one-shot until satisfied), and on every
- *   orientation change. Browsers require a user gesture for `requestFullscreen`,
- *   so the click and orientation listeners are how we eventually succeed; iOS
- *   Safari rejects in many contexts and we silently fall back.
- * - On a transition back to portrait we exit fullscreen (so the live/control
- *   route — which the orientation-redirect hook navigates to — isn't trapped).
+ * - PWA standalone: no-op (already chrome-less).
+ * - Regular tab: tries fullscreen *only* on `orientationchange` (a real user
+ *   gesture). We deliberately do NOT install a global pointerdown listener —
+ *   it ate user taps and could be interpreted as accidental UI interactions.
+ *   We also do not request on mount; the first orientation transition (or
+ *   the user's manual ⛶ button) will do it.
+ * - Exits fullscreen on rotate to portrait so the orientation-redirect hook
+ *   isn't trapped in a fullscreen viewport whose dimensions report portrait.
  */
 export function useAutoFullscreen() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (isPwaStandalone()) return;
 
-    let cancelled = false;
-    const tryEnter = async () => {
-      if (cancelled) return;
-      if (document.fullscreenElement) return;
+    const onOrientation = async () => {
+      // Use the actual screen.orientation API when available — it's stable
+      // across the fullscreen-induced resize storm. Inner-dimension fallback
+      // for browsers that lack screen.orientation.
+      const screenOrientation = (screen as Screen & { orientation?: { type?: string } }).orientation?.type;
+      const isLandscape = screenOrientation
+        ? screenOrientation.startsWith('landscape')
+        : window.innerWidth >= window.innerHeight;
       try {
-        await document.documentElement.requestFullscreen?.({ navigationUI: 'hide' });
+        if (isLandscape && !document.fullscreenElement && document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+        } else if (!isLandscape && document.fullscreenElement) {
+          await document.exitFullscreen();
+        }
       } catch {
-        /* needs a user gesture; the click/orientation listeners below will retry */
+        /* needs a user gesture or unsupported — silently fall back */
       }
     };
-    const tryExit = async () => {
-      if (!document.fullscreenElement) return;
-      try { await document.exitFullscreen(); } catch { /* noop */ }
-    };
 
-    // Best-effort on mount (works if the navigation that brought us here was
-    // the original gesture, e.g. a Link click in the same tick on Chrome).
-    void tryEnter();
-
-    const get = (): 'landscape' | 'portrait' =>
-      window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
-    let last = get();
-    const onResize = () => {
-      const next = get();
-      if (next === last) return;
-      last = next;
-      if (next === 'landscape') void tryEnter();
-      else void tryExit();
-    };
-
-    // Any tap on the monitor is a fresh user gesture — use it.
-    const onPointer = () => { void tryEnter(); };
-
-    window.addEventListener('resize', onResize);
-    window.addEventListener('orientationchange', onResize);
-    window.addEventListener('pointerdown', onPointer, { once: false });
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('orientationchange', onResize);
-      window.removeEventListener('pointerdown', onPointer);
-    };
+    window.addEventListener('orientationchange', onOrientation);
+    return () => window.removeEventListener('orientationchange', onOrientation);
   }, []);
 }
 
@@ -128,13 +106,20 @@ export function useAutoFullscreen() {
  * Used to flip between live (portrait) and monitor (landscape) routes on phones —
  * the PWA's orientation lock has been removed in the manifest. Only fires on
  * actual transitions, so manual navigation in the "wrong" orientation is left alone.
+ *
+ * Uses the `screen.orientation` API (when available) instead of inner-dimensions
+ * so the fullscreen-induced resize storm doesn't briefly classify the viewport
+ * as the opposite orientation and trigger an unwanted navigation.
  */
 export function useRedirectOnOrientation(target: 'landscape' | 'portrait', destination: string) {
   const navigate = useNavigate();
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const get = (): 'landscape' | 'portrait' =>
-      window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
+    const get = (): 'landscape' | 'portrait' => {
+      const screenOrientation = (screen as Screen & { orientation?: { type?: string } }).orientation?.type;
+      if (screenOrientation) return screenOrientation.startsWith('landscape') ? 'landscape' : 'portrait';
+      return window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
+    };
     let last = get();
     const update = () => {
       const next = get();
@@ -142,11 +127,7 @@ export function useRedirectOnOrientation(target: 'landscape' | 'portrait', desti
       last = next;
       if (next === target) navigate(destination, { replace: true });
     };
-    window.addEventListener('resize', update);
     window.addEventListener('orientationchange', update);
-    return () => {
-      window.removeEventListener('resize', update);
-      window.removeEventListener('orientationchange', update);
-    };
+    return () => window.removeEventListener('orientationchange', update);
   }, [target, destination, navigate]);
 }

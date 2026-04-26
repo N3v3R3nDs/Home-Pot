@@ -327,8 +327,7 @@ export function TournamentMonitor() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="absolute inset-0 z-30 grid place-items-center bg-felt-950/55 backdrop-blur-sm cursor-pointer"
-                onClick={() => advanceShortcut(1)}
+                className="absolute inset-0 z-30 grid place-items-center bg-felt-950/55 backdrop-blur-sm pointer-events-none"
               >
                 <motion.button
                   initial={{ y: 20, opacity: 0, scale: 0.96 }}
@@ -342,8 +341,8 @@ export function TournamentMonitor() {
                     opacity: { duration: 0.35 },
                     scale: { duration: 1.6, repeat: Infinity, ease: 'easeInOut' },
                   }}
-                  onClick={(e) => { e.stopPropagation(); void advanceShortcut(1); }}
-                  className="relative rounded-3xl shadow-glow font-display text-felt-950 overflow-hidden"
+                  onClick={() => void advanceShortcut(1)}
+                  className="relative rounded-3xl shadow-glow font-display text-felt-950 overflow-hidden pointer-events-auto"
                   style={{
                     backgroundImage: 'linear-gradient(135deg, rgb(var(--shine-from)) 0%, rgb(var(--shine-mid)) 50%, rgb(var(--shine-to)) 100%)',
                     paddingInline: 'clamp(2rem, 6vmin, 4.5rem)',

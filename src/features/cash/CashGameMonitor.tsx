@@ -305,18 +305,18 @@ function HeroDisplay({ hero, totalCards, activeIdx }: { hero: HeroCard | undefin
         className="flex flex-col items-center gap-2 max-w-full px-4"
       >
         <div className="text-brass-300/80 uppercase tracking-[0.5em] font-semibold flex items-center gap-3"
-          style={{ fontSize: 'clamp(1rem, 3.4vmin, 2rem)' }}>
-          <span style={{ fontSize: 'clamp(1.8rem, 5.5vmin, 3.5rem)' }}>{hero.emoji}</span>
+          style={{ fontSize: 'clamp(1.2rem, 4.5vmin, 2.8rem)' }}>
+          <span style={{ fontSize: 'clamp(2rem, 7vmin, 4.5rem)' }}>{hero.emoji}</span>
           {hero.label}
         </div>
         <div
           className="font-display leading-none text-brass-shine tabular-nums break-words text-center"
-          style={{ fontSize: 'clamp(3.5rem, 22vmin, 18rem)' }}
+          style={{ fontSize: 'clamp(4.5rem, 36vmin, 28rem)' }}
         >
           {hero.value}
         </div>
         {hero.sub && (
-          <div className="text-ink-300 mt-1 text-center" style={{ fontSize: 'clamp(1rem, 3vmin, 1.8rem)' }}>
+          <div className="text-ink-300 mt-1 text-center" style={{ fontSize: 'clamp(1.2rem, 4vmin, 2.6rem)' }}>
             {hero.sub}
           </div>
         )}
