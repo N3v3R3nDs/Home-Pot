@@ -5,6 +5,7 @@ import { NumberInput } from '@/components/ui/NumberInput';
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
 import { useConfirm } from '@/components/ui/Confirm';
+import { useToast } from '@/components/ui/Toast';
 import { Chip } from '@/components/Chip';
 import { useAuth } from '@/store/auth';
 import { useSettings } from '@/store/settings';
@@ -24,6 +25,7 @@ const CURRENCIES = ['NOK', 'USD', 'EUR', 'SEK', 'DKK', 'GBP'];
 export function Settings() {
   const { profile, user, updateProfile, signOut } = useAuth();
   const confirm = useConfirm();
+  const toast = useToast();
   const confirmSignOut = async () => {
     if (!await confirm({
       title: 'Sign out?',
@@ -51,6 +53,51 @@ export function Settings() {
   interface Member { id: string; display_name: string; avatar_emoji: string | null; account_type: 'pin' | 'email' | 'anonymous' | 'unknown'; is_anonymous: boolean; is_admin: boolean; }
   const [members, setMembers] = useState<Member[]>([]);
   const [resetting, setResetting] = useState<Member | null>(null);
+
+  const deleteMember = async (m: Member) => {
+    // Count what this profile is attached to so we can warn honestly.
+    // host_id has ON DELETE CASCADE → those games go away with all their
+    // players + buy-ins + bank txs. profile_id on tournament_players /
+    // cash_game_players uses ON DELETE SET NULL → those rows survive
+    // anonymously, preserving stats integrity.
+    const [tHosted, cHosted, tPlayed, cPlayed] = await Promise.all([
+      supabase.from('tournaments').select('id', { count: 'exact', head: true }).eq('host_id', m.id),
+      supabase.from('cash_games').select('id', { count: 'exact', head: true }).eq('host_id', m.id),
+      supabase.from('tournament_players').select('id', { count: 'exact', head: true }).eq('profile_id', m.id),
+      supabase.from('cash_game_players').select('id', { count: 'exact', head: true }).eq('profile_id', m.id),
+    ]);
+    const hostedT = tHosted.count ?? 0;
+    const hostedC = cHosted.count ?? 0;
+    const playedT = tPlayed.count ?? 0;
+    const playedC = cPlayed.count ?? 0;
+    const lines: string[] = [];
+    if (hostedT + hostedC > 0) {
+      lines.push(`⚠ ${hostedT + hostedC} hosted game${hostedT + hostedC === 1 ? '' : 's'} will be DELETED with all players, buy-ins and bank entries.`);
+    }
+    if (playedT + playedC > 0) {
+      lines.push(`${playedT + playedC} player record${playedT + playedC === 1 ? '' : 's'} will be anonymized (kept so stats stay correct).`);
+    }
+    if (lines.length === 0) {
+      lines.push('Clean delete — no games attached to this member.');
+    }
+    const ok = await confirm({
+      title: `Delete "${m.display_name}"?`,
+      message: lines.join('\n\n') + '\n\nThis cannot be undone.',
+      confirmLabel: '🗑 Delete forever',
+      destructive: true,
+    });
+    if (!ok) return;
+    // Calls the security-definer RPC defined in migration 11. Cascades the
+    // profile + auth.users in one atomic op; refuses if caller isn't admin.
+    const { error } = await supabase.rpc('delete_member', { p_user_id: m.id });
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error('[Settings] deleteMember failed:', error);
+      toast(`Couldn't delete: ${error.message}`, 'error');
+      return;
+    }
+    toast(`${m.display_name} deleted.`, 'success');
+  };
   const [newPin, setNewPin] = useState('');
   const [resetMsg, setResetMsg] = useState<string | null>(null);
 
@@ -327,6 +374,14 @@ export function Settings() {
                     <Button variant="ghost" className="!px-3 !py-1.5 text-xs" onClick={() => { setResetting(m); setNewPin(''); setResetMsg(null); }}>
                       🔑 Reset PIN
                     </Button>
+                  )}
+                  {meIsAdmin && !isMe && (
+                    <Button
+                      variant="ghost"
+                      className="!px-2 !py-1.5 text-xs text-red-400/80 hover:text-red-400"
+                      onClick={() => deleteMember(m)}
+                      title={`Delete ${m.display_name}`}
+                    >🗑</Button>
                   )}
                 </div>
               </li>

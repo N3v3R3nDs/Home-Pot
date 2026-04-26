@@ -15,6 +15,8 @@ import { useSettings } from '@/store/settings';
 import { formatMoney } from '@/lib/format';
 import { useCashGame } from '@/hooks/useCashGame';
 import { useRedirectOnOrientation } from '@/hooks/useFullscreen';
+import { suggestStartingStack, type ChipInventory, type Denomination } from '@/lib/chipSet';
+import { Chip } from '@/components/Chip';
 import { computeSettlements } from './settle';
 import { recordBankTx } from '@/lib/bank';
 import { renderCashShareCard, shareCard } from '@/lib/shareCard';
@@ -23,7 +25,7 @@ import type { CashGamePlayer, Profile } from '@/types/db';
 export function CashGameLive() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { currency } = useSettings();
+  const { currency, inventory } = useSettings();
   const toast = useToast();
   const {
     game, players, buyIns, profileMap,
@@ -501,6 +503,13 @@ export function CashGameLive() {
             </button>
           ))}
         </div>
+        <ChipSuggestion
+          amount={seatAmount}
+          smallBlind={game.small_blind}
+          players={players.length + 1}
+          inventory={inventory}
+          currency={currency}
+        />
         <BankToggle on={seatFromBank} setOn={setSeatFromBank} mode="from" amount={seatAmount} currency={currency} />
         <Button full onClick={confirmSeat} className="mt-4" disabled={seatAmount < 0}>
           Seat {seatingFor?.name ?? ''} for {formatMoney(seatAmount, currency)}{seatFromBank ? ' · from 🏦' : ''}
@@ -511,6 +520,13 @@ export function CashGameLive() {
         title={topUpFor ? `Buy-in for ${playerName(topUpFor)}` : ''}>
         <NumberInput label="Amount" value={topUpAmount} suffix={currency} min={0}
           onValueChange={setTopUpAmount} />
+        <ChipSuggestion
+          amount={topUpAmount}
+          smallBlind={game.small_blind}
+          players={Math.max(players.length, 1)}
+          inventory={inventory}
+          currency={currency}
+        />
         <BankToggle on={topUpFromBank} setOn={setTopUpFromBank} mode="from" amount={topUpAmount} currency={currency} />
         <Button full onClick={topUp} className="mt-4">Add buy-in{topUpFromBank ? ' · from 🏦' : ''}</Button>
       </Sheet>
@@ -531,6 +547,57 @@ function StatCard({ label, value }: { label: string; value: string }) {
     <div className="bg-felt-card border border-felt-800 rounded-xl p-3 text-center">
       <div className="text-[10px] uppercase tracking-widest text-ink-400">{label}</div>
       <div className="font-display text-2xl text-brass-200 mt-1 tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+function ChipSuggestion({
+  amount, smallBlind, players, inventory, currency,
+}: {
+  amount: number;
+  smallBlind: number | null;
+  players: number;
+  inventory: ChipInventory;
+  currency: string;
+}) {
+  if (amount <= 0) return null;
+  const minChip = (smallBlind && smallBlind > 0 ? smallBlind : 1) as Denomination;
+  // Headroom: assume at least 6 seats so the per-player cap leaves chips for
+  // late-arrivers. Float up if more are already seated.
+  const playerCount = Math.max(players, 6);
+  const sug = suggestStartingStack(inventory, playerCount, amount, { smallestChip: minChip });
+  const entries = (Object.entries(sug.perPlayer) as [string, number][])
+    .map(([d, n]) => ({ d: Number(d) as Denomination, n }))
+    .filter((e) => e.n > 0)
+    .sort((a, b) => a.d - b.d);
+  if (entries.length === 0) return null;
+  const off = sug.actualTotal - amount;
+  return (
+    <div className="mt-3 card-felt p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[10px] uppercase tracking-widest text-ink-400">
+          Suggested chips
+          {smallBlind ? <span className="ml-1.5 text-ink-500 normal-case tracking-normal">({smallBlind} SB)</span> : null}
+        </div>
+        <div className={`font-mono text-xs tabular-nums ${off === 0 ? 'text-ink-300' : 'text-brass-200'}`}>
+          ={formatMoney(sug.actualTotal, currency)}
+          {off !== 0 && <span className="text-ink-400 ml-1">({off > 0 ? '+' : ''}{off})</span>}
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {entries.map(({ d, n }) => (
+          <div
+            key={d}
+            className="flex items-center gap-1.5 bg-felt-900/60 border border-felt-700 rounded-lg pl-1.5 pr-2 py-1"
+          >
+            <Chip denom={d} size="sm" />
+            <span className="font-mono text-sm tabular-nums text-ink-100">×{n}</span>
+          </div>
+        ))}
+      </div>
+      {sug.warnings.length > 0 && (
+        <p className="mt-2 text-[11px] text-ink-400">{sug.warnings[0]}</p>
+      )}
     </div>
   );
 }
