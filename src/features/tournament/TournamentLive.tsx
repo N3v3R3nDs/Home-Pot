@@ -24,7 +24,7 @@ import { useT } from '@/lib/i18n';
 import { renderShareCard, shareCard } from '@/lib/shareCard';
 import type { Season } from '@/types/db';
 import { HandTimer } from '@/components/HandTimer';
-import { calculatePrizePool, distributePrizes } from './payouts';
+import { calculatePrizePool, calculateSeasonContribution, distributePrizes } from './payouts';
 import { formatChips, formatDuration, formatMoney, formatPlace } from '@/lib/format';
 import { colorUpCandidates, DENOMINATIONS, planColorUp, type Denomination } from '@/lib/chipSet';
 import { Chip } from '@/components/Chip';
@@ -146,6 +146,10 @@ export function TournamentLive() {
     buyIns, rebuys, addons,
     rakePercent: tournament.rake_percent,
     dealerTipPercent: tournament.dealer_tip_percent,
+    seasonCarve: tournament.season_carve ?? 0,
+  }) : 0;
+  const seasonContribution = tournament ? calculateSeasonContribution({
+    buyIns, rebuys, addons, seasonCarve: tournament.season_carve ?? 0,
   }) : 0;
   const bountyPool = tournament ? (buyIns + rebuys) * tournament.bounty_amount : 0;
   const totalChipsInPlay = tournament
@@ -578,6 +582,18 @@ export function TournamentLive() {
         <StatCard label={t('bountyPool')} value={tournament.bounty_amount ? formatMoney(bountyPool, currency) : '—'} />
         <StatCard label={t('avgStack')} value={formatChips(avgStack)} />
       </div>
+      {seasonContribution > 0 && (
+        <div className="rounded-2xl border border-brass-500/30 bg-brass-500/5 px-3 py-2 flex items-center justify-between text-sm">
+          <span className="flex items-center gap-2 text-brass-100">
+            <span className="text-base">🏆</span>
+            <span>
+              <div className="font-semibold">Season pot contribution</div>
+              <div className="text-[11px] text-ink-400">{tournament.season_carve} {currency} per entry · {buyIns + rebuys + addons} entries</div>
+            </span>
+          </span>
+          <span className="font-mono text-brass-200 tabular-nums">+{formatMoney(seasonContribution, currency)}</span>
+        </div>
+      )}
 
       {/* Color-up alert with smart swap math */}
       <AnimatePresence>

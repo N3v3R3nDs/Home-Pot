@@ -69,8 +69,8 @@ export function presetById(id: string): PayoutPreset {
 
 /**
  * Compute the prize pool from a tournament's player aggregates.
- * Excludes bounties (paid per knockout) and any rake / dealer tip taken
- * off the top before payouts.
+ * Excludes bounties (paid per knockout), any rake / dealer tip taken off
+ * the top, and the per-entry season carve (deferred to the season pot).
  */
 export function calculatePrizePool(args: {
   buyIn: number;
@@ -82,13 +82,37 @@ export function calculatePrizePool(args: {
   addons: number;
   rakePercent?: number;
   dealerTipPercent?: number;
+  /** Per-entry carve diverted to the season pot. Subtracted from buy-in,
+   *  rebuy and addon equally before the gross pool is computed. */
+  seasonCarve?: number;
 }): number {
-  const buyInPart = args.buyIns * (args.buyIn - args.bountyAmount);
-  const rebuyPart = args.rebuys * (args.rebuyAmount - args.bountyAmount);
-  const addonPart = args.addons * args.addonAmount;
+  const carve = Number(args.seasonCarve ?? 0);
+  const buyInPart = args.buyIns * Math.max(0, args.buyIn - args.bountyAmount - carve);
+  const rebuyPart = args.rebuys * Math.max(0, args.rebuyAmount - args.bountyAmount - carve);
+  const addonPart = args.addons * Math.max(0, args.addonAmount - carve);
   const gross = Math.max(0, buyInPart + rebuyPart + addonPart);
   const cuts = (Number(args.rakePercent ?? 0) + Number(args.dealerTipPercent ?? 0)) / 100;
   return Math.max(0, Math.round(gross * (1 - cuts)));
+}
+
+/** Total amount diverted to the season pot from this tournament's entries. */
+export function calculateSeasonContribution(args: {
+  buyIns: number;
+  rebuys: number;
+  addons: number;
+  seasonCarve?: number;
+}): number {
+  const carve = Number(args.seasonCarve ?? 0);
+  if (carve <= 0) return 0;
+  return Math.max(0, Math.round((args.buyIns + args.rebuys + args.addons) * carve));
+}
+
+/** Standard season-points curve. Top 6 finishers earn points; others get 0.
+ *  Hardcoded for now — make configurable per season later if needed. */
+const SEASON_POINTS_CURVE = [10, 7, 5, 3, 2, 1];
+export function seasonPointsForPlace(place: number | null | undefined): number {
+  if (!place || place < 1) return 0;
+  return SEASON_POINTS_CURVE[place - 1] ?? 0;
 }
 
 /** Compute prize per place from total pool + percent slots. */

@@ -19,5 +19,7 @@ COPY supabase/migrations/11-admin-delete-member.sql /docker-entrypoint-initdb.d/
 COPY supabase/migrations/12-promote-guest.sql /docker-entrypoint-initdb.d/zz-12-promote-guest.sql
 COPY supabase/migrations/13-spectator-readonly.sql /docker-entrypoint-initdb.d/zz-13-spectator-readonly.sql
 COPY supabase/migrations/14-tighten-admin-rpcs.sql /docker-entrypoint-initdb.d/zz-14-tighten-admin-rpcs.sql
+COPY supabase/migrations/15-admin-rename-member.sql /docker-entrypoint-initdb.d/zz-15-admin-rename-member.sql
+COPY supabase/migrations/16-season-carve.sql /docker-entrypoint-initdb.d/zz-16-season-carve.sql
 
 RUN chmod +x /docker-entrypoint-initdb.d/zz-00-roles.sh

@@ -61,6 +61,7 @@ export function TournamentWizard() {
   const [rebuysUntilLevel, setRebuysUntilLevel] = useState(tournamentDefaults.rebuysUntilLevel);
   const [rakePercent, setRakePercent] = useState(tournamentDefaults.rakePercent);
   const [dealerTipPercent, setDealerTipPercent] = useState(tournamentDefaults.dealerTipPercent);
+  const [seasonCarve, setSeasonCarve] = useState(tournamentDefaults.seasonCarve ?? 0);
   const [tournamentType, setTournamentType] = useState<'rebuy' | 'freezeout' | 'reentry' | 'bounty'>(tournamentDefaults.tournamentType);
 
   // templates
@@ -197,6 +198,7 @@ export function TournamentWizard() {
           dealer_tip_percent: dealerTipPercent,
           tournament_type: tournamentType,
           season_id: activeSeasonId,
+          season_carve: activeSeasonId ? Math.max(0, seasonCarve) : 0,
         })
         .select()
         .single();
@@ -319,6 +321,30 @@ export function TournamentWizard() {
             <NumberInput label={t('dealerTipPercent')} value={dealerTipPercent} suffix="%" min={0} max={100} decimals
               onValueChange={setDealerTipPercent} hint={t('dealerTipHint')} />
           </div>
+          {/* Season carve — only relevant when a season is active. Skims a
+              fixed amount per entry off this tournament's prize pool into a
+              shared season pot that funds the final table. */}
+          {activeSeasonId && (
+            <div className="rounded-2xl border border-brass-500/30 bg-brass-500/5 p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🏆</span>
+                <span className="font-semibold text-brass-100 text-sm">Season pot carve</span>
+                <span className="ml-auto text-[10px] uppercase tracking-widest text-brass-300/80">in season</span>
+              </div>
+              <NumberInput
+                value={seasonCarve}
+                suffix={currency}
+                min={0}
+                max={Math.max(0, buyIn - 1)}
+                onValueChange={setSeasonCarve}
+                hint={
+                  seasonCarve > 0
+                    ? `Each entry diverts ${seasonCarve} ${currency} to the season pot. Effective night prize: ${Math.max(0, buyIn - seasonCarve)} ${currency}.`
+                    : `Set above 0 to fund a season-end final table. e.g. 50 of a ${buyIn} ${currency} buy-in.`
+                }
+              />
+            </div>
+          )}
           {/* Hosting-only toggle: the host runs the controls but isn't seated.
               When ON, we (a) skip auto-adding them to the roster and (b) write
               a localStorage flag so the live screen doesn't push the take-your-

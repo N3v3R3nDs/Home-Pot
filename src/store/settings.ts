@@ -15,6 +15,9 @@ export interface TournamentDefaults {
   rebuysUntilLevel: number;
   rakePercent: number;
   dealerTipPercent: number;
+  /** Per-entry default carve toward the season pot. Only applied when a
+   *  season is active at tournament-creation time. */
+  seasonCarve: number;
   tournamentType: DefaultTournamentType;
 }
 
@@ -26,6 +29,7 @@ export const DEFAULT_TOURNAMENT_DEFAULTS: TournamentDefaults = {
   rebuysUntilLevel: 6,
   rakePercent: 0,
   dealerTipPercent: 0,
+  seasonCarve: 0,
   tournamentType: 'rebuy',
 };
 

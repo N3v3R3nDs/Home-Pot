@@ -190,6 +190,7 @@ export function TournamentMonitor() {
     buyIns, rebuys, addons,
     rakePercent: tournament.rake_percent,
     dealerTipPercent: tournament.dealer_tip_percent,
+    seasonCarve: tournament.season_carve ?? 0,
   }) : 0, [tournament, buyIns, rebuys, addons]);
 
   const totalChips = tournament

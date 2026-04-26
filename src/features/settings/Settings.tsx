@@ -63,6 +63,33 @@ export function Settings() {
   interface Member { id: string; display_name: string; avatar_emoji: string | null; account_type: 'pin' | 'email' | 'anonymous' | 'unknown'; is_anonymous: boolean; is_admin: boolean; }
   const [members, setMembers] = useState<Member[]>([]);
   const [resetting, setResetting] = useState<Member | null>(null);
+  // Rename a member (admin can do anyone, members can rename themselves).
+  // Goes through admin_rename_member RPC since profiles RLS only allows self.
+  const [renaming, setRenaming] = useState<Member | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [renameMsg, setRenameMsg] = useState<string | null>(null);
+  const [renameBusy, setRenameBusy] = useState(false);
+
+  const submitRename = async () => {
+    if (!renaming) return;
+    const trimmed = renameDraft.trim();
+    if (!trimmed) { setRenameMsg('Name required'); return; }
+    if (trimmed === renaming.display_name) { setRenaming(null); return; }
+    setRenameBusy(true);
+    const { error } = await supabase.rpc('admin_rename_member', {
+      p_user_id: renaming.id,
+      p_new_name: trimmed,
+    });
+    setRenameBusy(false);
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error('[Settings] admin_rename_member failed:', error);
+      setRenameMsg(error.message ?? 'Rename failed');
+      return;
+    }
+    toast(`Renamed to ${trimmed}.`, 'success');
+    setRenaming(null);
+  };
 
   const deleteMember = async (m: Member) => {
     // Count what this profile is attached to so we can warn honestly.
@@ -504,7 +531,13 @@ export function Settings() {
                   onValueChange={(n) => setDefDraft({ ...defDraft, rakePercent: n })} />
                 <NumberInput label="Dealer tip %" value={defDraft.dealerTipPercent} suffix="%" min={0} max={100} decimals
                   onValueChange={(n) => setDefDraft({ ...defDraft, dealerTipPercent: n })} />
+                <NumberInput label="🏆 Season carve" value={defDraft.seasonCarve ?? 0} suffix={currency} min={0}
+                  onValueChange={(n) => setDefDraft({ ...defDraft, seasonCarve: n })} />
+                <div /> {/* spacer */}
               </div>
+              <p className="text-[10px] text-ink-500 mt-2">
+                Season carve only applies when a season is active. Per-entry amount diverted from the prize pool to fund the season-end final table.
+              </p>
               <Button full className="mt-3" onClick={saveDefaults}>
                 {defSavedAt ? '✓ Saved' : 'Save defaults'}
               </Button>
@@ -537,6 +570,18 @@ export function Settings() {
                   </span>
                 </span>
                 <div className="flex gap-1">
+                  {(meIsAdmin || isMe) && (
+                    <Button
+                      variant="ghost"
+                      className="!px-2 !py-1.5 text-xs"
+                      onClick={() => {
+                        setRenaming(m);
+                        setRenameDraft(m.display_name);
+                        setRenameMsg(null);
+                      }}
+                      title={`Rename ${m.display_name}`}
+                    >✏️</Button>
+                  )}
                   {meIsAdmin && !isMe && (
                     <Button
                       variant="ghost"
@@ -693,6 +738,37 @@ export function Settings() {
         )}
         <Button full className="mt-4" onClick={submitReset} disabled={!/^\d{4}$/.test(newPin)}>
           Set new PIN
+        </Button>
+      </Sheet>
+
+      <Sheet
+        open={!!renaming}
+        onClose={() => { if (!renameBusy) { setRenaming(null); setRenameMsg(null); } }}
+        title={renaming ? `Rename ${renaming.display_name}` : ''}
+      >
+        <p className="text-ink-300 text-sm mb-3">
+          {renaming?.id === user?.id
+            ? "Update your own display name."
+            : "Their stats, bank balance and tournament history are unaffected — only the visible name changes."}
+        </p>
+        <Input
+          value={renameDraft}
+          onChange={(e) => setRenameDraft(e.target.value)}
+          placeholder="Display name"
+          autoFocus
+        />
+        {renameMsg && (
+          <p className={`mt-3 text-sm text-center ${renameMsg.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'}`}>
+            {renameMsg}
+          </p>
+        )}
+        <Button
+          full
+          className="mt-4"
+          onClick={submitRename}
+          disabled={renameBusy || !renameDraft.trim() || renameDraft.trim() === renaming?.display_name}
+        >
+          {renameBusy ? 'Saving…' : 'Save name'}
         </Button>
       </Sheet>
 

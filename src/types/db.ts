@@ -81,6 +81,9 @@ export interface Tournament {
   tournament_type: TournamentType;
   auto_advance: boolean;
   season_id: string | null;
+  /** Per-entry kr diverted from this tournament's prize pool to the season
+   *  pot. Buy-in + rebuy + addon each contribute this amount. 0 = disabled. */
+  season_carve: number;
   deleted_at: string | null;
   created_at: string;
 }

@@ -11,6 +11,7 @@ import { NumberInput } from '@/components/ui/NumberInput';
 import { useConfirm } from '@/components/ui/Confirm';
 import { useToast } from '@/components/ui/Toast';
 import { StatsCharts } from './Charts';
+import { SeasonPotCard } from './SeasonPotCard';
 import type {
   CashBuyIn, CashGame, CashGamePlayer, Profile, Tournament, TournamentPlayer,
 } from '@/types/db';
@@ -399,6 +400,14 @@ export function History() {
           );
         })}
       </div>
+
+      {tab === 'season' && (
+        <SeasonPotCard
+          tournaments={tournaments}
+          tournPlayers={tournPlayers}
+          profileMap={profileMap}
+        />
+      )}
 
       {tab === 'season' && (
         <StatsCharts

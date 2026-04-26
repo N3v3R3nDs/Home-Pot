@@ -71,6 +71,7 @@ function PublicView({ tournamentId }: { tournamentId: string }) {
     buyIns, rebuys, addons,
     rakePercent: tournament.rake_percent,
     dealerTipPercent: tournament.dealer_tip_percent,
+    seasonCarve: tournament.season_carve ?? 0,
   });
   const totalChips = buyIns * tournament.starting_stack
     + rebuys * (tournament.rebuy_stack ?? tournament.starting_stack)
