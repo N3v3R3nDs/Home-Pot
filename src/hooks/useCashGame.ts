@@ -43,11 +43,7 @@ export function useCashGame(cashGameId: string | undefined) {
     };
     void fetchSnapshot();
 
-    // Unique channel name per mount — two views (live + monitor) on the same
-    // client must NOT share a topic, otherwise a stale subscription left
-    // behind by an unmount-in-progress can swallow events from the new one.
-    const channelName = `cash:${cashGameId}:${Math.random().toString(36).slice(2, 10)}`;
-    const ch = supabase.channel(channelName)
+    const ch = supabase.channel(`cash:${cashGameId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_games', filter: `id=eq.${cashGameId}` },
         (p) => {
           if (p.eventType === 'DELETE') setGame(null);
@@ -90,8 +86,14 @@ export function useCashGame(cashGameId: string | undefined) {
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
 
+    // Hard safety net: poll every 10s. Even with realtime, dodgy networks
+    // (TV, public wifi) can silently drop events. Cheap query, keeps every
+    // mounted view within 10s of DB truth.
+    const pollId = setInterval(() => { if (!cancelled) void fetchSnapshot(); }, 10_000);
+
     return () => {
       cancelled = true;
+      clearInterval(pollId);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
       supabase.removeChannel(ch);

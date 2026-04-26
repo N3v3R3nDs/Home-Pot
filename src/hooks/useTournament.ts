@@ -23,12 +23,8 @@ export function useTournament(tournamentId: string | undefined) {
     };
     void load();
 
-    // Unique channel name per mount — when navigating between live and monitor
-    // on the same client, two effects can briefly overlap. Sharing a topic
-    // name lets the stale subscription swallow events from the fresh one.
-    const channelName = `tournament:${tournamentId}:${Math.random().toString(36).slice(2, 10)}`;
     const channel = supabase
-      .channel(channelName)
+      .channel(`tournament:${tournamentId}`)
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'tournaments', filter: `id=eq.${tournamentId}` },
         (payload) => {
@@ -58,8 +54,15 @@ export function useTournament(tournamentId: string | undefined) {
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
 
+    // Hard safety net: poll every 10s. Realtime can silently drop events on
+    // dodgy networks (TVs, sleeping tabs, public wifi). The poll is cheap
+    // (single row + filtered players) and guarantees the monitor never sits
+    // on a stale level for more than ~10s.
+    const pollId = setInterval(() => { if (!cancelled) void load(); }, 10_000);
+
     return () => {
       cancelled = true;
+      clearInterval(pollId);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
       supabase.removeChannel(channel);
