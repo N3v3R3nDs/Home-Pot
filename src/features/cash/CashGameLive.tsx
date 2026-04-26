@@ -178,9 +178,9 @@ export function CashGameLive() {
     const stillIn = players.filter((p) => p.cash_out === null);
     if (stillIn.length > 0) {
       const ok = await confirm({
-        title: 'End cash game?',
-        message: `${stillIn.length} player${stillIn.length === 1 ? ' has' : 's have'} not cashed out yet.`,
-        confirmLabel: '🏁 End anyway',
+        title: t('endCashGameQ'),
+        message: t('endCashGameBody', { n: stillIn.length }),
+        confirmLabel: t('endAnyway'),
       });
       if (!ok) return;
     }
@@ -192,9 +192,9 @@ export function CashGameLive() {
   const deleteCashGame = async () => {
     if (!game) return;
     const ok = await confirm({
-      title: `Delete "${game.name}"?`,
-      message: 'This removes the cash game and all player records. Bank transactions are preserved.',
-      confirmLabel: '🗑 Delete',
+      title: t('deleteX', { name: game.name }),
+      message: t('deleteCBody'),
+      confirmLabel: t('delete'),
       destructive: true,
     });
     if (!ok) return;

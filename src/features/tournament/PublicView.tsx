@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { resolveJoinCode } from '@/lib/joinCode';
 import { useTournament } from '@/hooks/useTournament';
 import { useTournamentClock } from '@/hooks/useTournamentClock';
+import { useAutoAdvance } from '@/hooks/useAutoAdvance';
 import { calculatePrizePool, distributePrizes } from './payouts';
 import { formatChips, formatDuration, formatMoney, formatPlace } from '@/lib/format';
 
@@ -55,6 +56,7 @@ export function PublicTournamentView() {
 function PublicView({ tournamentId }: { tournamentId: string }) {
   const { tournament, players } = useTournament(tournamentId);
   const clock = useTournamentClock(tournament);
+  useAutoAdvance(tournament, clock.msRemaining);
 
   if (!tournament) return null;
   const alive = players.filter((p) => p.eliminated_at === null);

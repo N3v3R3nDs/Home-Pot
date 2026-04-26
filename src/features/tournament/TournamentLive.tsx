@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTournament } from '@/hooks/useTournament';
 import { useTournamentClock } from '@/hooks/useTournamentClock';
+import { useAutoAdvance } from '@/hooks/useAutoAdvance';
 import { useAuth } from '@/store/auth';
 import { useSettings } from '@/store/settings';
 import { Card } from '@/components/ui/Card';
@@ -37,6 +38,7 @@ export function TournamentLive() {
   const undo = useUndo();
   const t = useT();
   const clock = useTournamentClock(tournament);
+  useAutoAdvance(tournament, clock.msRemaining, patchTournament);
 
   const [profileMap, setProfileMap] = useState<Record<string, Profile>>({});
   const [eliminating, setEliminating] = useState<TournamentPlayer | null>(null);
@@ -213,9 +215,9 @@ export function TournamentLive() {
   };
   const endTournament = async () => {
     if (!await confirm({
-      title: 'End tournament?',
-      message: 'It moves to History. Bank transactions are preserved.',
-      confirmLabel: '🏁 End now',
+      title: t('endTournamentQ'),
+      message: t('endTournamentBody'),
+      confirmLabel: t('endNow'),
     })) return;
     patchTournament({ state: 'finished' });
     setShowAdmin(false);
@@ -224,9 +226,9 @@ export function TournamentLive() {
   };
   const deleteTournament = async () => {
     if (!await confirm({
-      title: `Delete "${tournament.name}"?`,
-      message: 'This removes the tournament and all player records. Bank transactions are kept in the ledger.',
-      confirmLabel: '🗑 Delete',
+      title: t('deleteX', { name: tournament.name }),
+      message: t('deleteTBody'),
+      confirmLabel: t('delete'),
       destructive: true,
     })) return;
     setShowAdmin(false);
@@ -672,40 +674,56 @@ export function TournamentLive() {
       <Sheet open={showAdmin} onClose={() => setShowAdmin(false)} title="Tournament">
         <div className="space-y-3">
           <Button variant="ghost" full onClick={() => { setRenaming(tournament.name); setShowAdmin(false); }}>
-            ✏️ Rename
+            ✏️ {t('rename')}
           </Button>
+          <button
+            onClick={async () => {
+              const next = !tournament.auto_advance;
+              patchTournament({ auto_advance: next });
+              await supabase.from('tournaments').update({ auto_advance: next }).eq('id', tournament.id);
+            }}
+            className="w-full flex items-center justify-between rounded-xl border px-4 py-3 bg-felt-900/60 border-felt-700 text-ink-100"
+          >
+            <span>
+              <div className="font-semibold text-sm text-left">{t('autoAdvance')}</div>
+              <div className="text-[11px] text-ink-400 text-left">{t('autoAdvanceHint')}</div>
+            </span>
+            <span className={`w-12 h-7 rounded-full relative ${tournament.auto_advance ? 'bg-brass-500' : 'bg-felt-700'}`}>
+              <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white transition ${tournament.auto_advance ? 'left-5' : 'left-0.5'}`} />
+            </span>
+          </button>
           <Button variant="ghost" full onClick={cloneTournament}>
-            📋 Clone for next time
+            {t('cloneForNextTime')}
           </Button>
           {tournament.state === 'finished' && (
             <Button variant="ghost" full onClick={shareResults}>
-              📤 Share results card
+              {t('shareResultsCard')}
             </Button>
           )}
           {tournament.state !== 'finished' && (
             <Button variant="ghost" full onClick={endTournament}>
-              🏁 End tournament now
-              <span className="text-xs text-ink-400 ml-2">(moves to History)</span>
+              {t('endTournamentNow')}
+              <span className="text-xs text-ink-400 ml-2">{t('movesToHistory')}</span>
             </Button>
           )}
           <Button variant="danger" full onClick={deleteTournament}>
-            🗑 Delete tournament
+            {t('deleteTournament')}
           </Button>
           <p className="text-xs text-ink-400 text-center pt-2">
-            Bank transactions tied to this tournament are kept in the ledger for audit.
+            {t('bankTxKept')}
           </p>
         </div>
       </Sheet>
 
-      <Sheet open={renaming !== null} onClose={() => setRenaming(null)} title="Rename tournament">
+      <Sheet open={renaming !== null} onClose={() => setRenaming(null)} title={t('rename')}>
         <Input
           value={renaming ?? ''}
           onChange={(e) => setRenaming(e.target.value)}
-          placeholder="Tournament name"
+          placeholder={t('tournamentName')}
           autoFocus
         />
         <Button full className="mt-4" onClick={saveRename} disabled={!renaming?.trim()}>
-          Save
+          {t('save')}
         </Button>
       </Sheet>
 

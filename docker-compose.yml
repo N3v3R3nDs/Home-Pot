@@ -55,6 +55,7 @@ services:
       - ./supabase/migrations/07-audit-and-soft-delete.sql:/docker-entrypoint-initdb.d/zz-07-audit-and-soft-delete.sql
       - ./supabase/migrations/08-club-features.sql:/docker-entrypoint-initdb.d/zz-08-club-features.sql
       - ./supabase/migrations/09-tournament-types.sql:/docker-entrypoint-initdb.d/zz-09-tournament-types.sql
+      - ./supabase/migrations/10-auto-advance.sql:/docker-entrypoint-initdb.d/zz-10-auto-advance.sql
     ports:
       - "54322:5432"
 

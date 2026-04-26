@@ -79,6 +79,7 @@ export interface Tournament {
   rake_percent: number;
   dealer_tip_percent: number;
   tournament_type: TournamentType;
+  auto_advance: boolean;
   season_id: string | null;
   deleted_at: string | null;
   created_at: string;

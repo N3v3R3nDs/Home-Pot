@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTournament } from '@/hooks/useTournament';
 import { useTournamentClock } from '@/hooks/useTournamentClock';
+import { useAutoAdvance } from '@/hooks/useAutoAdvance';
 import { useSettings } from '@/store/settings';
 import { calculatePrizePool, distributePrizes } from './payouts';
 import { formatChips, formatDuration, formatMoney, formatPlace } from '@/lib/format';
@@ -20,6 +21,7 @@ export function TournamentMonitor() {
   const { id } = useParams<{ id: string }>();
   const { tournament, players } = useTournament(id);
   const clock = useTournamentClock(tournament);
+  useAutoAdvance(tournament, clock.msRemaining);
   const { currency } = useSettings();
   const { isFullscreen, toggle: toggleFullscreen } = useFullscreen();
   const orientation = useOrientation();
@@ -122,6 +124,17 @@ export function TournamentMonitor() {
             <span className="pill bg-felt-800/70 border border-felt-700 hidden sm:inline-flex">
               {tournament.state.toUpperCase()}
             </span>
+            <button
+              onClick={async () => {
+                await supabase.from('tournaments').update({ auto_advance: !tournament.auto_advance }).eq('id', tournament.id);
+              }}
+              className={`w-9 h-9 grid place-items-center rounded-full border ${
+                tournament.auto_advance
+                  ? 'bg-brass-500/20 border-brass-500/40 text-brass-100'
+                  : 'bg-felt-800/70 border-felt-700 text-ink-300'
+              }`}
+              title={tournament.auto_advance ? 'Auto-advance ON (tap to disable)' : 'Auto-advance OFF (tap to enable)'}
+            >{tournament.auto_advance ? '⏭' : '✋'}</button>
             <button
               onClick={() => setHideQr((v) => !v)}
               className="w-9 h-9 grid place-items-center rounded-full bg-felt-800/70 border border-felt-700 text-ink-200"
@@ -298,6 +311,24 @@ export function TournamentMonitor() {
           </div>
         </div>
       )}
+
+      {/* End-of-level prompt: shows when timer hits 0 and auto_advance is OFF */}
+      {clock.msRemaining === 0 && tournament.state === 'running' && !tournament.auto_advance &&
+        clock.levelIndex < tournament.blind_structure.length - 1 && (() => {
+          const nextLvl = tournament.blind_structure[clock.levelIndex + 1];
+          return (
+            <button
+              onClick={() => advanceShortcut(1)}
+              className="absolute inset-x-6 top-1/2 -translate-y-1/2 z-30 mx-auto max-w-md rounded-2xl py-6 px-6 shadow-glow font-display text-3xl text-felt-950"
+              style={{ backgroundImage: 'linear-gradient(135deg, rgb(var(--shine-from)) 0%, rgb(var(--shine-mid)) 50%, rgb(var(--shine-to)) 100%)' }}
+            >
+              ▶ Next level
+              <div className="text-xs font-sans uppercase tracking-widest mt-1 opacity-80">
+                {nextLvl?.sb}/{nextLvl?.bb}
+              </div>
+            </button>
+          );
+        })()}
 
       {/* JOIN — corner badge. Tiny in both orientations so it never covers the
           clock or eats into the layout. Tap header "show QR" to toggle. */}

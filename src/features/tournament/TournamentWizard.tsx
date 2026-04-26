@@ -21,6 +21,7 @@ import { formatChips, formatMoney } from '@/lib/format';
 import { useToast } from '@/components/ui/Toast';
 import { useEffect } from 'react';
 import { useSeason } from '@/store/season';
+import { useT } from '@/lib/i18n';
 import type { Profile, TournamentTemplate } from '@/types/db';
 
 type Step = 'setup' | 'players' | 'structure' | 'review';
@@ -35,6 +36,7 @@ export function TournamentWizard() {
   const [step, setStep] = useState<Step>('setup');
 
   const toast = useToast();
+  const t = useT();
   const { activeSeasonId } = useSeason();
 
   // setup
@@ -66,7 +68,7 @@ export function TournamentWizard() {
     setRakePercent(Number(tpl.rake_percent));
     setDealerTipPercent(Number(tpl.dealer_tip_percent));
     setStackSize(tpl.starting_stack);
-    toast(`Loaded template: ${tpl.name}`, 'success');
+    toast(t('loadedTemplate', { name: tpl.name }), 'success');
   };
 
   const saveAsTemplate = async () => {
@@ -81,7 +83,7 @@ export function TournamentWizard() {
       rake_percent: rakePercent, dealer_tip_percent: dealerTipPercent, currency,
     };
     const { error } = await supabase.from('tournament_templates').insert(tpl);
-    if (error) toast(error.message, 'error'); else toast('Template saved 📋', 'success');
+    if (error) toast(error.message, 'error'); else toast(t('templateSaved'), 'success');
   };
 
   // players
@@ -200,8 +202,8 @@ export function TournamentWizard() {
   return (
     <div className="space-y-5">
       <header>
-        <h1 className="font-display text-3xl text-brass-shine">New Tournament</h1>
-        <p className="text-ink-400 text-sm mt-1">Step {stepIndex + 1} of 4 · {step}</p>
+        <h1 className="font-display text-3xl text-brass-shine">{t('newTournament')}</h1>
+        <p className="text-ink-400 text-sm mt-1">{t('stepXofY', { x: stepIndex + 1, y: 4, label: t(`step${step.charAt(0).toUpperCase() + step.slice(1)}` as 'stepSetup') })}</p>
         <div className="mt-3 h-1.5 bg-felt-800 rounded-full overflow-hidden">
           <motion.div
             className="h-full bg-brass-shine"
@@ -216,7 +218,7 @@ export function TournamentWizard() {
         <Card className="space-y-4">
           {templates.length > 0 && (
             <div>
-              <p className="label">Load template</p>
+              <p className="label">{t('loadTemplate')}</p>
               <div className="flex flex-wrap gap-2">
                 {templates.map((tpl) => (
                   <button
@@ -229,13 +231,13 @@ export function TournamentWizard() {
             </div>
           )}
           <div>
-            <p className="label">Format</p>
+            <p className="label">{t('format')}</p>
             <div className="grid grid-cols-4 gap-2">
               {([
-                ['rebuy', 'Re-buy', '🔁'],
-                ['freezeout', 'Freezeout', '🧊'],
-                ['reentry', 'Re-entry', '↻'],
-                ['bounty', 'Bounty', '💀'],
+                ['rebuy', t('formatRebuy'), '🔁'],
+                ['freezeout', t('formatFreezeout'), '🧊'],
+                ['reentry', t('formatReentry'), '↻'],
+                ['bounty', t('formatBounty'), '💀'],
               ] as const).map(([id, label, ico]) => (
                 <button
                   key={id}
@@ -250,30 +252,30 @@ export function TournamentWizard() {
               ))}
             </div>
           </div>
-          <Input label="Tournament name" value={name} onChange={(e) => setName(e.target.value)} />
+          <Input label={t('tournamentName')} value={name} onChange={(e) => setName(e.target.value)} />
           <div className="grid grid-cols-2 gap-3">
-            <Input label="Buy-in" type="number" value={buyIn} suffix={currency}
+            <Input label={t('buyIn')} type="number" value={buyIn} suffix={currency}
               onChange={(e) => setBuyIn(Number(e.target.value))} />
-            <Input label="Bounty" type="number" value={bountyAmount} suffix={currency}
+            <Input label={t('bounty')} type="number" value={bountyAmount} suffix={currency}
               onChange={(e) => setBountyAmount(Number(e.target.value))}
-              hint="Per knockout. 0 = none." />
-            <Input label="Re-buy" type="number" value={rebuyAmount} suffix={currency}
+              hint={t('bountyHint')} />
+            <Input label={t('rebuy')} type="number" value={rebuyAmount} suffix={currency}
               onChange={(e) => setRebuyAmount(Number(e.target.value))} />
-            <Input label="Add-on" type="number" value={addonAmount} suffix={currency}
+            <Input label={t('addon')} type="number" value={addonAmount} suffix={currency}
               onChange={(e) => setAddonAmount(Number(e.target.value))} />
-            <Input label="Re-buys until level" type="number" value={rebuysUntilLevel}
+            <Input label={t('rebuysUntilLevel')} type="number" value={rebuysUntilLevel}
               onChange={(e) => setRebuysUntilLevel(Number(e.target.value))} />
-            <Input label="Rake %" type="number" value={rakePercent} suffix="%"
+            <Input label={t('rakePercent')} type="number" value={rakePercent} suffix="%"
               onChange={(e) => setRakePercent(Number(e.target.value))}
-              hint="Off the top of the prize pool. 0 = none." />
-            <Input label="Dealer tip %" type="number" value={dealerTipPercent} suffix="%"
+              hint={t('rakeHint')} />
+            <Input label={t('dealerTipPercent')} type="number" value={dealerTipPercent} suffix="%"
               onChange={(e) => setDealerTipPercent(Number(e.target.value))}
-              hint="Off the top, to the dealer/host." />
+              hint={t('dealerTipHint')} />
           </div>
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={saveAsTemplate}>📋 Save as template</Button>
+            <Button variant="ghost" onClick={saveAsTemplate}>{t('saveAsTemplate')}</Button>
             <Button full onClick={() => { setStep('players'); loadProfiles(); }}>
-              Next: Pick players →
+              {t('nextPickPlayers')}
             </Button>
           </div>
         </Card>

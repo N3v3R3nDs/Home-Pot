@@ -243,6 +243,84 @@ const en = {
   pinResetSuccess: "✓ {name}'s PIN is now {pin}. Tell them to sign in with that.",
   quickJoinPin: 'quick-join · PIN',
   emailPassword: 'email · password',
+
+  // Auto-advance + level transitions
+  autoAdvance: 'Auto-advance levels',
+  autoAdvanceHint: 'When the timer hits 0, jump to the next level automatically.',
+  nextLevel: '▶ Next level',
+  levelDone: 'Level done',
+
+  // Tournament types
+  format: 'Format',
+  formatRebuy: 'Re-buy',
+  formatFreezeout: 'Freezeout',
+  formatReentry: 'Re-entry',
+  formatBounty: 'Bounty',
+
+  // Wizard remaining
+  rakePercent: 'Rake %',
+  rakeHint: 'Off the top of the prize pool. 0 = none.',
+  dealerTipPercent: 'Dealer tip %',
+  dealerTipHint: 'Off the top, to the dealer/host.',
+  loadTemplate: 'Load template',
+  saveAsTemplate: '📋 Save as template',
+  loadedTemplate: 'Loaded template: {name}',
+  templateSaved: 'Template saved 📋',
+
+  // Cash game more
+  buyInsLabel: 'Buy-ins',
+  topUp: 'Top-up',
+
+  // Confirmations + toasts
+  endTournamentQ: 'End tournament?',
+  endTournamentBody: 'It moves to History. Bank transactions are preserved.',
+  endNow: '🏁 End now',
+  deleteX: 'Delete "{name}"?',
+  deleteTBody: 'This removes the tournament and all player records. Bank transactions are kept in the ledger.',
+  deleteCBody: 'This removes the cash game and all player records. Bank transactions are preserved.',
+  endCashGameQ: 'End cash game?',
+  endCashGameBody: '{n} players have not cashed out yet.',
+  endAnyway: '🏁 End anyway',
+  saved: 'Saved ✓',
+
+  // Settle-up + admin
+  spectatorLink: '📺 Copy spectator link (no login)',
+  copyPlayerLink: 'Copy player link',
+  cloneForNextTime: '📋 Clone for next time',
+  shareResultsCard: '📤 Share results card',
+
+  // Status / health
+  systemStatus: 'System status',
+  allSystemsGo: 'All systems go ✅',
+  somethingDown: "Something's down — check below.",
+  runningChecks: 'Running checks…',
+  pwaOnline: 'PWA online',
+  authSession: 'Auth session',
+  restQuery: 'REST query',
+  realtimeSubscription: 'Realtime subscription',
+  serviceWorker: 'Service worker',
+
+  // Seasons
+  seasons: 'Seasons',
+  newSeason: '＋ New season',
+  seasonHint: 'Stats can be scoped to a season. Pick "All time" anytime to see everything.',
+  allTime: 'All time',
+  active: 'active',
+  startDate: 'Start',
+  endDate: 'End',
+  createSeason: 'Create season',
+
+  // Misc
+  manage: 'Manage',
+  tx: 'Tx',
+  largerText: 'Larger text',
+  largerTextHint: 'Bumps app text size 18%. Helpful for older eyes / small phones.',
+  backgroundAlerts: 'Background alerts',
+  backgroundAlertsOnHint: "On. We'll buzz when blinds go up while the app is in the background.",
+  backgroundAlertsBlocked: 'Blocked by your browser. Re-enable in browser site settings.',
+  backgroundAlertsUnsupported: "Your browser doesn't support notifications.",
+  backgroundAlertsTapEnable: 'Tap to enable notifications.',
+  enable: 'Enable',
 };
 
 const no: typeof en = {
@@ -463,6 +541,75 @@ const no: typeof en = {
   pinResetSuccess: '✓ {name} sin PIN er nå {pin}. Be dem logge inn med den.',
   quickJoinPin: 'hurtigjoin · PIN',
   emailPassword: 'e-post · passord',
+
+  autoAdvance: 'Auto-skift nivå',
+  autoAdvanceHint: 'Når tiden går ut, hopper appen automatisk til neste nivå.',
+  nextLevel: '▶ Neste nivå',
+  levelDone: 'Nivå ferdig',
+
+  format: 'Format',
+  formatRebuy: 'Re-buy',
+  formatFreezeout: 'Freezeout',
+  formatReentry: 'Re-entry',
+  formatBounty: 'Bounty',
+
+  rakePercent: 'Rake %',
+  rakeHint: 'Trekkes av premiepotten. 0 = ingen.',
+  dealerTipPercent: 'Tips til dealer %',
+  dealerTipHint: 'Trekkes av potten, går til dealer/vert.',
+  loadTemplate: 'Last mal',
+  saveAsTemplate: '📋 Lagre som mal',
+  loadedTemplate: 'Lastet mal: {name}',
+  templateSaved: 'Mal lagret 📋',
+
+  buyInsLabel: 'Buy-ins',
+  topUp: 'Påfyll',
+
+  endTournamentQ: 'Avslutt turneringen?',
+  endTournamentBody: 'Den flyttes til Historikk. Banktransaksjoner bevares.',
+  endNow: '🏁 Avslutt nå',
+  deleteX: 'Slette «{name}»?',
+  deleteTBody: 'Dette fjerner turneringen og alle spillerregistreringer. Banktransaksjoner beholdes i regnskapet.',
+  deleteCBody: 'Dette fjerner cash game og alle spillerregistreringer. Banktransaksjoner bevares.',
+  endCashGameQ: 'Avslutt cash game?',
+  endCashGameBody: '{n} spillere har ikke kjøpt seg ut ennå.',
+  endAnyway: '🏁 Avslutt likevel',
+  saved: 'Lagret ✓',
+
+  spectatorLink: '📺 Kopier tilskuer-lenke (uten innlogging)',
+  copyPlayerLink: 'Kopier spiller-lenke',
+  cloneForNextTime: '📋 Klon til neste gang',
+  shareResultsCard: '📤 Del resultatkort',
+
+  systemStatus: 'Systemstatus',
+  allSystemsGo: 'Alt kjører ✅',
+  somethingDown: 'Noe er nede — sjekk under.',
+  runningChecks: 'Kjører sjekker…',
+  pwaOnline: 'PWA tilkoblet',
+  authSession: 'Innloggingsøkt',
+  restQuery: 'REST-spørring',
+  realtimeSubscription: 'Realtime-abonnement',
+  serviceWorker: 'Service worker',
+
+  seasons: 'Sesonger',
+  newSeason: '＋ Ny sesong',
+  seasonHint: 'Statistikk kan filtreres på sesong. Velg «Alltid» når du vil se alt.',
+  allTime: 'Alltid',
+  active: 'aktiv',
+  startDate: 'Start',
+  endDate: 'Slutt',
+  createSeason: 'Opprett sesong',
+
+  manage: 'Administrer',
+  tx: 'Tx',
+  largerText: 'Større tekst',
+  largerTextHint: 'Øker teksten med 18 %. Hjelper for eldre øyne / små telefoner.',
+  backgroundAlerts: 'Bakgrunnsvarsler',
+  backgroundAlertsOnHint: 'På. Vi sender et signal når blinds øker mens appen er i bakgrunnen.',
+  backgroundAlertsBlocked: 'Blokkert av nettleseren. Aktivér i nettleserens nettstedsinnstillinger.',
+  backgroundAlertsUnsupported: 'Nettleseren din støtter ikke varsler.',
+  backgroundAlertsTapEnable: 'Trykk for å aktivere varsler.',
+  enable: 'Aktivér',
 };
 
 export const STRINGS: Record<Lang, typeof en> = { en, no };
