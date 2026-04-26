@@ -28,7 +28,7 @@ import { calculatePrizePool, distributePrizes } from './payouts';
 import { formatChips, formatDuration, formatMoney, formatPlace } from '@/lib/format';
 import { colorUpCandidates, DENOMINATIONS, planColorUp, type Denomination } from '@/lib/chipSet';
 import { Chip } from '@/components/Chip';
-import { blindUpSound, eliminationSound, finalTableSound, tickSound } from '@/lib/sounds';
+import { blindUpSound, eliminationSound, finalTableSound, levelExpiredSound, tickSound } from '@/lib/sounds';
 import { notify } from '@/lib/notify';
 import type { Profile, TournamentPlayer } from '@/types/db';
 
@@ -180,6 +180,27 @@ export function TournamentLive() {
     const sec = Math.ceil(clock.msRemaining / 1000);
     if (sec > 0 && sec <= 5) tickSound();
   }, [clock.msRemaining, soundEnabled, tournament]);
+
+  // "Time's up" alert in MANUAL mode (auto-advance off). Fires once per
+  // level boundary the moment the clock crosses to 0. The follow-up
+  // blindUpSound only fires when the host actually advances, so the two
+  // never collide audibly. Auto-advance mode skips this — the level
+  // changes immediately and blindUpSound covers it.
+  const expiredKeyRef = useRef<string | null>(null);
+  const prevMsRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!tournament) return;
+    const ms = clock.msRemaining;
+    const prev = prevMsRef.current;
+    prevMsRef.current = ms;
+    if (tournament.state !== 'running' || tournament.auto_advance) return;
+    if (clock.levelIndex >= tournament.blind_structure.length - 1) return; // final level: no "next" to ring for
+    if (prev === null || prev <= 0 || ms > 0) return; // need a real positive→zero transition
+    const key = `${tournament.id}:${tournament.current_level}:${tournament.level_started_at ?? ''}`;
+    if (expiredKeyRef.current === key) return;
+    expiredKeyRef.current = key;
+    if (soundEnabled) levelExpiredSound();
+  }, [clock.msRemaining, clock.levelIndex, soundEnabled, tournament]);
 
   // Color-up suggestions
   const colorUps = clock.level ? colorUpCandidates(clock.level.bb) : [];

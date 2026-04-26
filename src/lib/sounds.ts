@@ -330,6 +330,27 @@ export function celebrationSound() {
   subKick(0, 0.18);
 }
 
+/**
+ * Level-expired alert — fires once per level boundary in *manual* mode (when
+ * auto-advance is off), to tell the host "time's up, hit Next." Three
+ * pulsed boxing-bell strikes with a low gong undertone — distinctly more
+ * alarm-y than blindUp so the two cues don't sound the same when the host
+ * eventually advances and blindUp fires for the new level.
+ */
+export function levelExpiredSound() {
+  // Three sharp dings (classic boxing/ring bell — round over)
+  for (let i = 0; i < 3; i++) {
+    const t = i * 0.18;
+    fat(880, 0.25, 0.10, t, 'square', 0.5);   // A5
+    fat(1318, 0.25, 0.08, t, 'square', 0.5);  // E6 (perfect 5th)
+  }
+  // Low gong undertone for weight
+  fat(110, 0.9, 0.08, 0.0, 'sine', 0.5);
+  // Final brass ring resolving up
+  fat(1760, 0.5, 0.06, 0.55, 'triangle', 0.7);
+  subKick(0, 0.18);
+}
+
 /** Heads-up dueling sting — two competing low notes that resolve. */
 export function headsUpSound() {
   subKick(0, 0.4);

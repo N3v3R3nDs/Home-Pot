@@ -17,7 +17,7 @@ import { StatusPill } from '@/components/StatusPill';
 import { JoinBadge } from '@/components/JoinBadge';
 import { EmptyStateBadge } from '@/components/EmptyStateBadge';
 import { CelebrationOverlay, type Celebration } from '@/components/CelebrationOverlay';
-import { eliminationSound, finalTableSound, winnerSound } from '@/lib/sounds';
+import { eliminationSound, finalTableSound, levelExpiredSound, winnerSound } from '@/lib/sounds';
 import { RecapCard } from './RecapCard';
 
 /**
@@ -157,6 +157,27 @@ export function TournamentMonitor() {
     }
     lastStateRef.current = tournament.state;
   }, [alive.length, players, tournament, soundEnabled]);
+
+  // "Time's up" cue when running in manual mode (auto-advance off) and the
+  // clock hits 0:00. Fires once per (level, level_started_at) tuple so it
+  // doesn't repeat. Auto-advance mode skips — the new level's blindUp from
+  // LevelUpFanfare covers that case. Same logic as TournamentLive so the
+  // host hears it whether they're on the live view or the broadcast.
+  const expiredKeyRef = useRef<string | null>(null);
+  const prevMsRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!tournament) return;
+    const ms = clock.msRemaining;
+    const prev = prevMsRef.current;
+    prevMsRef.current = ms;
+    if (tournament.state !== 'running' || tournament.auto_advance) return;
+    if (clock.levelIndex >= tournament.blind_structure.length - 1) return;
+    if (prev === null || prev <= 0 || ms > 0) return;
+    const key = `${tournament.id}:${tournament.current_level}:${tournament.level_started_at ?? ''}`;
+    if (expiredKeyRef.current === key) return;
+    expiredKeyRef.current = key;
+    if (soundEnabled) levelExpiredSound();
+  }, [clock.msRemaining, clock.levelIndex, soundEnabled, tournament]);
   const buyIns = players.reduce((s, p) => s + p.buy_ins, 0);
   const rebuys = players.reduce((s, p) => s + p.rebuys, 0);
   const addons = players.reduce((s, p) => s + p.addons, 0);
