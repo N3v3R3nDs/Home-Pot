@@ -470,14 +470,14 @@ export function TournamentLive() {
                 setAnteDraft(clock.level?.ante ?? 0);
                 setEditingAnte(true);
               }}
-              className={`mt-0.5 text-[10px] uppercase tracking-widest px-1.5 py-0.5 rounded-md transition ${
+              className={`mt-1.5 text-[10px] uppercase tracking-widest font-semibold rounded-full border px-2.5 py-1 transition ${
                 clock.level?.ante
-                  ? 'text-brass-300 hover:bg-brass-500/10'
-                  : 'text-ink-500 hover:text-ink-300 hover:bg-felt-800'
+                  ? 'bg-brass-500/15 border-brass-500/40 text-brass-100 hover:bg-brass-500/25'
+                  : 'bg-felt-800/60 border-felt-700 text-ink-300 hover:border-brass-500/40 hover:text-brass-200'
               }`}
-              title="Tap to edit ante for this level"
+              title={clock.level?.ante ? 'Tap to edit or remove ante' : 'Tap to add an ante to this level'}
             >
-              {clock.level?.ante ? `ante ${clock.level.ante}` : '+ ante'}
+              {clock.level?.ante ? `ante ${clock.level.ante} ✏️` : '+ add ante'}
             </button>
           </div>
           <div>

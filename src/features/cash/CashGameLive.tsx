@@ -15,7 +15,7 @@ import { useSettings } from '@/store/settings';
 import { formatMoney } from '@/lib/format';
 import { useCashGame } from '@/hooks/useCashGame';
 import { useRedirectOnOrientation } from '@/hooks/useFullscreen';
-import { suggestStartingStack, type ChipInventory, type Denomination } from '@/lib/chipSet';
+import { suggestCashStack, type ChipInventory, type Denomination } from '@/lib/chipSet';
 import { Chip } from '@/components/Chip';
 import { computeSettlements } from './settle';
 import { recordBankTx } from '@/lib/bank';
@@ -561,11 +561,11 @@ function ChipSuggestion({
   currency: string;
 }) {
   if (amount <= 0) return null;
-  const minChip = (smallBlind && smallBlind > 0 ? smallBlind : 1) as Denomination;
   // Headroom: assume at least 6 seats so the per-player cap leaves chips for
   // late-arrivers. Float up if more are already seated.
   const playerCount = Math.max(players, 6);
-  const sug = suggestStartingStack(inventory, playerCount, amount, { smallestChip: minChip });
+  const sb = smallBlind && smallBlind > 0 ? smallBlind : 1;
+  const sug = suggestCashStack(inventory, playerCount, amount, sb);
   const entries = (Object.entries(sug.perPlayer) as [string, number][])
     .map(([d, n]) => ({ d: Number(d) as Denomination, n }))
     .filter((e) => e.n > 0)

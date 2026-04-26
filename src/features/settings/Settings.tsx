@@ -37,6 +37,7 @@ export function Settings() {
   };
   const { currency, setCurrency, inventory, setInventory, soundEnabled, toggleSound, theme, setTheme, language, setLanguage, largeText, toggleLargeText, tournamentDefaults, setTournamentDefaults } = useSettings();
   const [defDraft, setDefDraft] = useState(tournamentDefaults);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [defSavedAt, setDefSavedAt] = useState<number | null>(null);
   const saveDefaults = () => {
     setTournamentDefaults(defDraft);
@@ -153,6 +154,31 @@ export function Settings() {
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
+
+  const deleteGuest = async (g: { name: string; appearances: number }) => {
+    const ok = await confirm({
+      title: `Delete guest "${g.name}"?`,
+      message:
+        `Removes their ${g.appearances} appearance${g.appearances === 1 ? '' : 's'} from past tournaments and cash games — their buy-ins, knockouts and prize entries on those rows are deleted (the games themselves stay).\n\nUse this to clean up typos and test players. To preserve their history, promote them to a member instead.\n\nThis cannot be undone.`,
+      confirmLabel: '🗑 Delete guest',
+      destructive: true,
+    });
+    if (!ok) return;
+    // Case-insensitive match on guest_name. RLS already permits authenticated
+    // users to write on these tables (per migration 02-collab.sql).
+    const [tRes, cRes] = await Promise.all([
+      supabase.from('tournament_players').delete().ilike('guest_name', g.name).is('profile_id', null),
+      supabase.from('cash_game_players').delete().ilike('guest_name', g.name).is('profile_id', null),
+    ]);
+    if (tRes.error || cRes.error) {
+      const msg = tRes.error?.message ?? cRes.error?.message ?? 'unknown';
+      // eslint-disable-next-line no-console
+      console.error('[Settings] deleteGuest failed:', tRes.error, cRes.error);
+      toast(`Couldn't delete: ${msg}`, 'error');
+      return;
+    }
+    toast(`${g.name} removed from past games.`, 'success');
+  };
 
   const submitPromote = async () => {
     if (!promoting) return;
@@ -275,50 +301,84 @@ export function Settings() {
         </div>
       </Card>
 
+      {/* Advanced — collapsed by default. Mirrors the wizard's per-format
+          field visibility so what you set here is what shows in step 1. */}
       <Card>
-        <p className="label">Tournament defaults</p>
-        <p className="text-xs text-ink-400 mb-3">
-          New tournaments start with these values pre-filled. You can still tweak per-tournament in the wizard.
-        </p>
-        <div className="grid grid-cols-4 gap-1.5 mb-3">
-          {([
-            ['rebuy', 'Re-buy', '🔁'],
-            ['freezeout', 'Freezeout', '🧊'],
-            ['reentry', 'Re-entry', '↻'],
-            ['bounty', 'Bounty', '💀'],
-          ] as const).map(([id, label, ico]) => (
-            <button
-              key={id}
-              onClick={() => setDefDraft({ ...defDraft, tournamentType: id })}
-              className={`p-2 rounded-xl border text-center text-xs ${
-                defDraft.tournamentType === id ? 'bg-brass-500/15 border-brass-500/50 text-brass-100' : 'bg-felt-900/60 border-felt-700 text-ink-300'
-              }`}
-            >
-              <div className="text-base">{ico}</div>
-              <div className="font-semibold mt-0.5">{label}</div>
-            </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <NumberInput label="Buy-in" value={defDraft.buyIn} suffix={currency} min={0} required
-            onValueChange={(n) => setDefDraft({ ...defDraft, buyIn: n })} />
-          <NumberInput label="Bounty" value={defDraft.bountyAmount} suffix={currency} min={0}
-            onValueChange={(n) => setDefDraft({ ...defDraft, bountyAmount: n })} />
-          <NumberInput label="Re-buy" value={defDraft.rebuyAmount} suffix={currency} min={0}
-            onValueChange={(n) => setDefDraft({ ...defDraft, rebuyAmount: n })} />
-          <NumberInput label="Add-on" value={defDraft.addonAmount} suffix={currency} min={0}
-            onValueChange={(n) => setDefDraft({ ...defDraft, addonAmount: n })} />
-          <NumberInput label="Re-buys until level" value={defDraft.rebuysUntilLevel} min={0}
-            onValueChange={(n) => setDefDraft({ ...defDraft, rebuysUntilLevel: n })} />
-          <div /> {/* spacer to keep next row aligned */}
-          <NumberInput label="Rake %" value={defDraft.rakePercent} suffix="%" min={0} max={100} decimals
-            onValueChange={(n) => setDefDraft({ ...defDraft, rakePercent: n })} />
-          <NumberInput label="Dealer tip %" value={defDraft.dealerTipPercent} suffix="%" min={0} max={100} decimals
-            onValueChange={(n) => setDefDraft({ ...defDraft, dealerTipPercent: n })} />
-        </div>
-        <Button full className="mt-3" onClick={saveDefaults}>
-          {defSavedAt ? '✓ Saved' : 'Save defaults'}
-        </Button>
+        <button
+          onClick={() => setShowAdvanced((v) => !v)}
+          className="w-full flex items-center justify-between text-left"
+        >
+          <span>
+            <div className="label !mb-0.5">⚙️ Advanced — tournament defaults</div>
+            <div className="text-[11px] text-ink-400">{showAdvanced ? 'Tap to collapse.' : 'Pre-fill values for the wizard. Tap to expand.'}</div>
+          </span>
+          <span className="text-ink-400 text-lg">{showAdvanced ? '▾' : '▸'}</span>
+        </button>
+        {showAdvanced && (() => {
+          const type = defDraft.tournamentType;
+          return (
+            <div className="mt-4">
+              <p className="label">Default format</p>
+              <div className="grid grid-cols-4 gap-1.5 mb-3">
+                {([
+                  ['rebuy', 'Re-buy', '🔁'],
+                  ['freezeout', 'Freezeout', '🧊'],
+                  ['reentry', 'Re-entry', '↻'],
+                  ['bounty', 'Bounty', '💀'],
+                ] as const).map(([id, label, ico]) => (
+                  <button
+                    key={id}
+                    onClick={() => {
+                      // Mirror the wizard: switching format zeros the fields
+                      // that don't apply, so what you save matches what the
+                      // wizard will show on step 1.
+                      const next = { ...defDraft, tournamentType: id };
+                      if (id === 'rebuy') next.addonAmount = 0;
+                      else if (id === 'freezeout') { next.rebuyAmount = 0; next.addonAmount = 0; }
+                      else if (id === 'bounty' && next.bountyAmount === 0) {
+                        next.bountyAmount = Math.max(50, Math.round(next.buyIn * 0.25));
+                      }
+                      setDefDraft(next);
+                    }}
+                    className={`p-2 rounded-xl border text-center text-xs ${
+                      type === id ? 'bg-brass-500/15 border-brass-500/50 text-brass-100' : 'bg-felt-900/60 border-felt-700 text-ink-300'
+                    }`}
+                  >
+                    <div className="text-base">{ico}</div>
+                    <div className="font-semibold mt-0.5">{label}</div>
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <NumberInput label="Buy-in" value={defDraft.buyIn} suffix={currency} min={0} required
+                  onValueChange={(n) => setDefDraft({ ...defDraft, buyIn: n })} />
+                {type === 'bounty' && (
+                  <NumberInput label="Bounty" value={defDraft.bountyAmount} suffix={currency} min={0}
+                    onValueChange={(n) => setDefDraft({ ...defDraft, bountyAmount: n })} />
+                )}
+                {(type === 'rebuy' || type === 'reentry') && (
+                  <NumberInput label="Re-buy" value={defDraft.rebuyAmount} suffix={currency} min={0}
+                    onValueChange={(n) => setDefDraft({ ...defDraft, rebuyAmount: n })} />
+                )}
+                {type !== 'rebuy' && type !== 'freezeout' && (
+                  <NumberInput label="Add-on" value={defDraft.addonAmount} suffix={currency} min={0}
+                    onValueChange={(n) => setDefDraft({ ...defDraft, addonAmount: n })} />
+                )}
+                {(type === 'rebuy' || type === 'reentry') && (
+                  <NumberInput label="Re-buys until level" value={defDraft.rebuysUntilLevel} min={0}
+                    onValueChange={(n) => setDefDraft({ ...defDraft, rebuysUntilLevel: n })} />
+                )}
+                <NumberInput label="Rake %" value={defDraft.rakePercent} suffix="%" min={0} max={100} decimals
+                  onValueChange={(n) => setDefDraft({ ...defDraft, rakePercent: n })} />
+                <NumberInput label="Dealer tip %" value={defDraft.dealerTipPercent} suffix="%" min={0} max={100} decimals
+                  onValueChange={(n) => setDefDraft({ ...defDraft, dealerTipPercent: n })} />
+              </div>
+              <Button full className="mt-3" onClick={saveDefaults}>
+                {defSavedAt ? '✓ Saved' : 'Save defaults'}
+              </Button>
+            </div>
+          );
+        })()}
       </Card>
 
       <Card>
@@ -483,16 +543,24 @@ export function Settings() {
                       </span>
                     </span>
                     {meIsAdmin && (
-                      <Button
-                        variant="ghost"
-                        className="!px-3 !py-1.5 text-xs"
-                        onClick={() => {
-                          setPromoting(g);
-                          setPromoteName(g.name);
-                          setPromotePin('');
-                          setPromoteMsg(null);
-                        }}
-                      >🎟 Promote</Button>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          className="!px-3 !py-1.5 text-xs"
+                          onClick={() => {
+                            setPromoting(g);
+                            setPromoteName(g.name);
+                            setPromotePin('');
+                            setPromoteMsg(null);
+                          }}
+                        >🎟 Promote</Button>
+                        <Button
+                          variant="ghost"
+                          className="!px-2 !py-1.5 text-xs text-red-400/80 hover:text-red-400"
+                          onClick={() => deleteGuest(g)}
+                          title={`Delete guest ${g.name} from past games`}
+                        >🗑</Button>
+                      </div>
                     )}
                   </li>
                 ))}

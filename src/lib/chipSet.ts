@@ -237,6 +237,131 @@ export function suggestStartingStack(
 }
 
 /**
+ * Cash-game variant of {@link suggestStartingStack}.
+ *
+ * Cash chips need different weighting from tournament chips:
+ *  - A working stack of *small-blind chips* must be present so players can
+ *    post SB without bothering anyone for change. We reserve 5 of them.
+ *  - All inventory bands within range are used (no sampling), so a 2/5/10/25/
+ *    50/100 set actually shows the 2-chip instead of skipping to 5.
+ *  - Distribution leans middle-heavy (cash players cycle 10/25/50 most), with
+ *    fewer huge chips relative to a tournament where big stacks need fast
+ *    pre-flop raising potential.
+ *
+ * Returns the same shape as `suggestStartingStack` so callers can render it
+ * the same way.
+ */
+export function suggestCashStack(
+  inventory: ChipInventory,
+  players: number,
+  buyIn: number,
+  smallBlind: number,
+): StackSuggestion {
+  const warnings: string[] = [];
+  if (players <= 0 || buyIn <= 0) {
+    return { perPlayer: {}, actualTotal: 0, targetTotal: buyIn, warnings: ['Invalid input'], bands: [] };
+  }
+  const cap = (d: Denomination) => Math.floor((inventory[d] ?? 0) / Math.max(players, 1));
+
+  // Smallest practical chip = the smallest denomination ≥ SB that we own. If SB
+  // doesn't match an exact chip, round up to the closest stocked one.
+  const sbDenom: Denomination | undefined = DENOMINATIONS.find(
+    (d) => d >= Math.max(smallBlind, 1) && cap(d) >= 1,
+  );
+  if (!sbDenom) {
+    return { perPlayer: {}, actualTotal: 0, targetTotal: buyIn, bands: [],
+      warnings: [`No chips ≥ T${smallBlind} available.`] };
+  }
+
+  const largest = Math.max(sbDenom, Math.floor(buyIn / 2));
+  const bands = DENOMINATIONS.filter((d) => d >= sbDenom && d <= largest && cap(d) >= 1);
+  if (bands.length === 0) {
+    return { perPlayer: {}, actualTotal: 0, targetTotal: buyIn, bands: [],
+      warnings: [`No chips in usable range.`] };
+  }
+
+  // Cash-friendly profiles — flatter than tournament, mid-band heavy.
+  const CASH_PROFILES: Record<number, number[]> = {
+    1: [100],
+    2: [30, 70],
+    3: [15, 35, 50],
+    4: [10, 25, 30, 35],
+    5: [8, 18, 24, 25, 25],
+    6: [6, 14, 20, 22, 20, 18],
+    7: [5, 11, 16, 20, 19, 16, 13],
+  };
+  const profile = CASH_PROFILES[bands.length] ?? new Array(bands.length).fill(100 / bands.length);
+
+  const counts = new Map<Denomination, number>();
+
+  // Step 1 — reserve SB chips for posting blinds (5 is enough for several rounds).
+  const sbReserve = Math.min(5, cap(sbDenom));
+  counts.set(sbDenom, sbReserve);
+  const reservedValue = sbReserve * sbDenom;
+  const rest = Math.max(0, buyIn - reservedValue);
+
+  // Step 2 — first-pass weighted distribution of the remainder across the
+  // other bands. Skip the SB band; we already seeded it.
+  bands.forEach((d, i) => {
+    if (d === sbDenom) return;
+    const wantValue = (rest * profile[i]) / 100;
+    const wantCount = Math.max(0, Math.floor(wantValue / d));
+    counts.set(d, Math.min(wantCount, cap(d)));
+  });
+
+  const totalOf = () => Array.from(counts.entries()).reduce((s, [d, n]) => s + d * n, 0);
+  let total = totalOf();
+  const tolerance = Math.max(Math.floor(buyIn * 0.01), sbDenom);
+
+  // Step 3 — greedy top-up: repeatedly add the chip that gets us closest to
+  // target without overshooting (tie-break favors the larger chip).
+  for (let safety = 0; safety < 400 && total < buyIn - tolerance; safety++) {
+    const remaining = buyIn - total;
+    let bestIdx = -1;
+    let bestScore = Infinity;
+    bands.forEach((d, i) => {
+      if ((counts.get(d) ?? 0) >= cap(d)) return;
+      const overshoot = Math.max(0, d - remaining);
+      const score = overshoot - d * 0.001;
+      if (score < bestScore) { bestScore = score; bestIdx = i; }
+    });
+    if (bestIdx === -1) break;
+    const d = bands[bestIdx];
+    counts.set(d, (counts.get(d) ?? 0) + 1);
+    total += d;
+  }
+
+  // Step 4 — trim from the top if we overshot. Never trim the SB reserve.
+  for (let safety = 0; safety < 400 && total > buyIn + tolerance; safety++) {
+    let removed = false;
+    for (let i = bands.length - 1; i >= 0; i--) {
+      const d = bands[i];
+      if (d === sbDenom) continue;
+      const c = counts.get(d) ?? 0;
+      if (c <= 0) continue;
+      if (total - d < buyIn - tolerance) continue;
+      counts.set(d, c - 1);
+      total -= d;
+      removed = true;
+      break;
+    }
+    if (!removed) break;
+  }
+
+  const perPlayer: Partial<Record<Denomination, number>> = {};
+  bands.forEach((d) => {
+    const c = counts.get(d) ?? 0;
+    if (c > 0) perPlayer[d] = c;
+  });
+
+  if (Math.abs(total - buyIn) > tolerance) {
+    warnings.push(`Best mix is ${total.toLocaleString()} (target ${buyIn.toLocaleString()}).`);
+  }
+
+  return { perPlayer, actualTotal: total, targetTotal: buyIn, warnings, bands };
+}
+
+/**
  * For a given big blind, identify chip denominations that have become
  * "useless" (smaller than ~5% of the BB) — candidates for color-up.
  */
