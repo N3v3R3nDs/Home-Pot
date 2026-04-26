@@ -10,7 +10,7 @@ import { calculatePrizePool, distributePrizes } from './payouts';
 import { formatChips, formatDuration, formatMoney, formatPlace } from '@/lib/format';
 import { requestWakeLock, releaseWakeLock } from '@/lib/wakeLock';
 import { QRCode } from '@/components/QRCode';
-import { useFullscreen, useOrientation } from '@/hooks/useFullscreen';
+import { useFullscreen, useOrientation, useRedirectOnOrientation } from '@/hooks/useFullscreen';
 
 /**
  * The monitor view — designed for a large screen / TV / extra phone propped
@@ -25,6 +25,7 @@ export function TournamentMonitor() {
   const { currency } = useSettings();
   const { isFullscreen, toggle: toggleFullscreen } = useFullscreen();
   const orientation = useOrientation();
+  useRedirectOnOrientation('portrait', id ? `/tournament/${id}` : '');
   const [hideQr, setHideQr] = useState(false);
 
   // In fullscreen mode (or landscape on a smaller viewport) we want the

@@ -13,6 +13,7 @@ import { supabase } from '@/lib/supabase';
 import { useSettings } from '@/store/settings';
 import { formatMoney } from '@/lib/format';
 import { useCashGame } from '@/hooks/useCashGame';
+import { useRedirectOnOrientation } from '@/hooks/useFullscreen';
 import { computeSettlements } from './settle';
 import { recordBankTx } from '@/lib/bank';
 import type { CashGamePlayer, Profile } from '@/types/db';
@@ -26,6 +27,7 @@ export function CashGameLive() {
     game, players, buyIns, profileMap,
     patchGame, patchPlayer, addPlayer: addPlayerLocal, addBuyIn,
   } = useCashGame(id);
+  useRedirectOnOrientation('landscape', id ? `/cash/${id}/monitor` : '');
   const [adding, setAdding] = useState(false);
   const [guestName, setGuestName] = useState('');
   const [defaultBuyIn, setDefaultBuyIn] = useState(500);

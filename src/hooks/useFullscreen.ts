@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 /** Tracks browser fullscreen state and exposes toggle helpers. */
 export function useFullscreen(target?: HTMLElement | null) {
@@ -50,4 +51,32 @@ export function useOrientation(): 'landscape' | 'portrait' {
     };
   }, []);
   return orientation;
+}
+
+/**
+ * Redirects to `destination` when the device rotates *into* `target` orientation.
+ * Used to flip between live (portrait) and monitor (landscape) routes on phones —
+ * the PWA's orientation lock has been removed in the manifest. Only fires on
+ * actual transitions, so manual navigation in the "wrong" orientation is left alone.
+ */
+export function useRedirectOnOrientation(target: 'landscape' | 'portrait', destination: string) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const get = (): 'landscape' | 'portrait' =>
+      window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
+    let last = get();
+    const update = () => {
+      const next = get();
+      if (next === last) return;
+      last = next;
+      if (next === target) navigate(destination, { replace: true });
+    };
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('orientationchange', update);
+    };
+  }, [target, destination, navigate]);
 }

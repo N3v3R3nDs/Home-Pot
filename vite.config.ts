@@ -42,7 +42,7 @@ export default defineConfig({
         theme_color: '#06190d',
         background_color: '#06190d',
         display: 'standalone',
-        orientation: 'portrait',
+        orientation: 'any',
         start_url: '/',
         scope: '/',
         icons: [

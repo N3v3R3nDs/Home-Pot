@@ -33,7 +33,7 @@ interface PlayerPick { profileId?: string; guestName?: string; }
 export function TournamentWizard() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { currency, inventory } = useSettings();
+  const { currency, inventory, tournamentDefaults } = useSettings();
 
   const [step, setStep] = useState<Step>('setup');
 
@@ -51,16 +51,16 @@ export function TournamentWizard() {
   };
   const { activeSeasonId } = useSeason();
 
-  // setup
+  // setup — initial values come from the persisted "Tournament defaults"
   const [name, setName] = useState(`Poker night ${new Date().toLocaleDateString('nb-NO')}`);
-  const [buyIn, setBuyIn] = useState(200);
-  const [rebuyAmount, setRebuyAmount] = useState(200);
-  const [addonAmount, setAddonAmount] = useState(200);
-  const [bountyAmount, setBountyAmount] = useState(0);
-  const [rebuysUntilLevel, setRebuysUntilLevel] = useState(6);
-  const [rakePercent, setRakePercent] = useState(0);
-  const [dealerTipPercent, setDealerTipPercent] = useState(0);
-  const [tournamentType, setTournamentType] = useState<'rebuy' | 'freezeout' | 'reentry' | 'bounty'>('rebuy');
+  const [buyIn, setBuyIn] = useState(tournamentDefaults.buyIn);
+  const [rebuyAmount, setRebuyAmount] = useState(tournamentDefaults.rebuyAmount);
+  const [addonAmount, setAddonAmount] = useState(tournamentDefaults.addonAmount);
+  const [bountyAmount, setBountyAmount] = useState(tournamentDefaults.bountyAmount);
+  const [rebuysUntilLevel, setRebuysUntilLevel] = useState(tournamentDefaults.rebuysUntilLevel);
+  const [rakePercent, setRakePercent] = useState(tournamentDefaults.rakePercent);
+  const [dealerTipPercent, setDealerTipPercent] = useState(tournamentDefaults.dealerTipPercent);
+  const [tournamentType, setTournamentType] = useState<'rebuy' | 'freezeout' | 'reentry' | 'bounty'>(tournamentDefaults.tournamentType);
 
   // templates
   const [templates, setTemplates] = useState<TournamentTemplate[]>([]);

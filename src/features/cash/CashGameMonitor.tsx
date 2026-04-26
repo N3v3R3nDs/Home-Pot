@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useCashGame } from '@/hooks/useCashGame';
 import { useSettings } from '@/store/settings';
 import { useT } from '@/lib/i18n';
-import { useFullscreen, useOrientation } from '@/hooks/useFullscreen';
+import { useFullscreen, useOrientation, useRedirectOnOrientation } from '@/hooks/useFullscreen';
 import { requestWakeLock, releaseWakeLock } from '@/lib/wakeLock';
 import { QRCode } from '@/components/QRCode';
 import { formatMoney } from '@/lib/format';
@@ -22,6 +22,7 @@ import {
  */
 export function CashGameMonitor() {
   const { id } = useParams<{ id: string }>();
+  useRedirectOnOrientation('portrait', id ? `/cash/${id}` : '');
   return <MonitorBody cashGameId={id} />;
 }
 

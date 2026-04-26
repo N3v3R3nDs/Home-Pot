@@ -32,7 +32,14 @@ export function Settings() {
     })) return;
     await signOut();
   };
-  const { currency, setCurrency, inventory, setInventory, soundEnabled, toggleSound, theme, setTheme, language, setLanguage, largeText, toggleLargeText } = useSettings();
+  const { currency, setCurrency, inventory, setInventory, soundEnabled, toggleSound, theme, setTheme, language, setLanguage, largeText, toggleLargeText, tournamentDefaults, setTournamentDefaults } = useSettings();
+  const [defDraft, setDefDraft] = useState(tournamentDefaults);
+  const [defSavedAt, setDefSavedAt] = useState<number | null>(null);
+  const saveDefaults = () => {
+    setTournamentDefaults(defDraft);
+    setDefSavedAt(Date.now());
+    setTimeout(() => setDefSavedAt(null), 2200);
+  };
   const t = useT();
   const [notifPerm, setNotifPerm] = useState(notificationPermission());
   const [name, setName] = useState(profile?.display_name ?? '');
@@ -155,6 +162,52 @@ export function Settings() {
             <span className={`absolute top-1 w-6 h-6 rounded-full bg-white transition ${largeText ? 'left-7' : 'left-1'}`} />
           </button>
         </div>
+      </Card>
+
+      <Card>
+        <p className="label">Tournament defaults</p>
+        <p className="text-xs text-ink-400 mb-3">
+          New tournaments start with these values pre-filled. You can still tweak per-tournament in the wizard.
+        </p>
+        <div className="grid grid-cols-4 gap-1.5 mb-3">
+          {([
+            ['rebuy', 'Re-buy', '🔁'],
+            ['freezeout', 'Freezeout', '🧊'],
+            ['reentry', 'Re-entry', '↻'],
+            ['bounty', 'Bounty', '💀'],
+          ] as const).map(([id, label, ico]) => (
+            <button
+              key={id}
+              onClick={() => setDefDraft({ ...defDraft, tournamentType: id })}
+              className={`p-2 rounded-xl border text-center text-xs ${
+                defDraft.tournamentType === id ? 'bg-brass-500/15 border-brass-500/50 text-brass-100' : 'bg-felt-900/60 border-felt-700 text-ink-300'
+              }`}
+            >
+              <div className="text-base">{ico}</div>
+              <div className="font-semibold mt-0.5">{label}</div>
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Input label="Buy-in" type="number" value={defDraft.buyIn} suffix={currency}
+            onChange={(e) => setDefDraft({ ...defDraft, buyIn: Number(e.target.value) })} />
+          <Input label="Bounty" type="number" value={defDraft.bountyAmount} suffix={currency}
+            onChange={(e) => setDefDraft({ ...defDraft, bountyAmount: Number(e.target.value) })} />
+          <Input label="Re-buy" type="number" value={defDraft.rebuyAmount} suffix={currency}
+            onChange={(e) => setDefDraft({ ...defDraft, rebuyAmount: Number(e.target.value) })} />
+          <Input label="Add-on" type="number" value={defDraft.addonAmount} suffix={currency}
+            onChange={(e) => setDefDraft({ ...defDraft, addonAmount: Number(e.target.value) })} />
+          <Input label="Re-buys until level" type="number" value={defDraft.rebuysUntilLevel}
+            onChange={(e) => setDefDraft({ ...defDraft, rebuysUntilLevel: Number(e.target.value) })} />
+          <div /> {/* spacer to keep next row aligned */}
+          <Input label="Rake %" type="number" value={defDraft.rakePercent} suffix="%"
+            onChange={(e) => setDefDraft({ ...defDraft, rakePercent: Number(e.target.value) })} />
+          <Input label="Dealer tip %" type="number" value={defDraft.dealerTipPercent} suffix="%"
+            onChange={(e) => setDefDraft({ ...defDraft, dealerTipPercent: Number(e.target.value) })} />
+        </div>
+        <Button full className="mt-3" onClick={saveDefaults}>
+          {defSavedAt ? '✓ Saved' : 'Save defaults'}
+        </Button>
       </Card>
 
       <Card>

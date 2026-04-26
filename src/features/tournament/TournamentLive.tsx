@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTournament } from '@/hooks/useTournament';
 import { useTournamentClock } from '@/hooks/useTournamentClock';
 import { useAutoAdvance } from '@/hooks/useAutoAdvance';
+import { useRedirectOnOrientation } from '@/hooks/useFullscreen';
 import { useAuth } from '@/store/auth';
 import { useSettings } from '@/store/settings';
 import { Card } from '@/components/ui/Card';
@@ -40,6 +41,7 @@ export function TournamentLive() {
   const t = useT();
   const clock = useTournamentClock(tournament);
   useAutoAdvance(tournament, clock.msRemaining, patchTournament);
+  useRedirectOnOrientation('landscape', id ? `/tournament/${id}/monitor` : '');
 
   const [profileMap, setProfileMap] = useState<Record<string, Profile>>({});
   const [eliminating, setEliminating] = useState<TournamentPlayer | null>(null);

@@ -6,6 +6,29 @@ import { applyTheme, type ThemeId } from '@/lib/themes';
 
 type Lang = 'en' | 'no';
 
+export type DefaultTournamentType = 'rebuy' | 'freezeout' | 'reentry' | 'bounty';
+export interface TournamentDefaults {
+  buyIn: number;
+  bountyAmount: number;
+  rebuyAmount: number;
+  addonAmount: number;
+  rebuysUntilLevel: number;
+  rakePercent: number;
+  dealerTipPercent: number;
+  tournamentType: DefaultTournamentType;
+}
+
+export const DEFAULT_TOURNAMENT_DEFAULTS: TournamentDefaults = {
+  buyIn: 200,
+  bountyAmount: 0,
+  rebuyAmount: 200,
+  addonAmount: 200,
+  rebuysUntilLevel: 6,
+  rakePercent: 0,
+  dealerTipPercent: 0,
+  tournamentType: 'rebuy',
+};
+
 interface SettingsState {
   currency: string;
   inventory: ChipInventory;
@@ -13,12 +36,14 @@ interface SettingsState {
   theme: ThemeId;
   language: Lang;
   largeText: boolean;
+  tournamentDefaults: TournamentDefaults;
   setCurrency: (c: string) => void;
   setInventory: (inv: ChipInventory) => void;
   toggleSound: () => void;
   setTheme: (t: ThemeId) => void;
   setLanguage: (l: Lang) => void;
   toggleLargeText: () => void;
+  setTournamentDefaults: (d: TournamentDefaults) => void;
 }
 
 export const useSettings = create<SettingsState>()(
@@ -30,6 +55,7 @@ export const useSettings = create<SettingsState>()(
       theme: 'felt-green' as ThemeId,
       language: 'no' as Lang,
       largeText: false,
+      tournamentDefaults: DEFAULT_TOURNAMENT_DEFAULTS,
       setCurrency: (c) => set({ currency: c }),
       setInventory: (inv) => set({ inventory: inv }),
       toggleSound: () => {
@@ -42,6 +68,7 @@ export const useSettings = create<SettingsState>()(
         applyTheme(t);
       },
       setLanguage: (l) => set({ language: l }),
+      setTournamentDefaults: (d) => set({ tournamentDefaults: d }),
       toggleLargeText: () => {
         const next = !get().largeText;
         set({ largeText: next });
