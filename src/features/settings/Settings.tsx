@@ -101,18 +101,81 @@ export function Settings() {
   const [newPin, setNewPin] = useState('');
   const [resetMsg, setResetMsg] = useState<string | null>(null);
 
+  // Past-game guests: people who showed up via guest_name on tournament_players
+  // / cash_game_players but never signed up. Surfaced here so the host can
+  // promote them into real PIN-based members and roll their history forward.
+  interface Guest { name: string; appearances: number }
+  const [guests, setGuests] = useState<Guest[]>([]);
+  const [promoting, setPromoting] = useState<Guest | null>(null);
+  const [promoteName, setPromoteName] = useState('');
+  const [promotePin, setPromotePin] = useState('');
+  const [promoteMsg, setPromoteMsg] = useState<string | null>(null);
+  const [promoteBusy, setPromoteBusy] = useState(false);
+
   useEffect(() => {
     const load = async () => {
       const { data } = await supabase.from('members').select('*').order('display_name');
       setMembers((data ?? []) as Member[]);
     };
-    load();
-    // Refresh whenever a new profile is created or one is deleted/updated.
+    const loadGuests = async () => {
+      // Pull every guest_name across both tables, then dedupe + count.
+      const [{ data: tps }, { data: cps }] = await Promise.all([
+        supabase.from('tournament_players').select('guest_name').not('guest_name', 'is', null),
+        supabase.from('cash_game_players').select('guest_name').not('guest_name', 'is', null),
+      ]);
+      const counts = new Map<string, number>();
+      for (const r of [...(tps ?? []), ...(cps ?? [])]) {
+        const raw = ((r as { guest_name: string }).guest_name ?? '').trim();
+        if (!raw) continue;
+        const key = raw.toLowerCase();
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      // Preserve original casing of the first occurrence.
+      const original = new Map<string, string>();
+      for (const r of [...(tps ?? []), ...(cps ?? [])]) {
+        const raw = ((r as { guest_name: string }).guest_name ?? '').trim();
+        if (!raw) continue;
+        const key = raw.toLowerCase();
+        if (!original.has(key)) original.set(key, raw);
+      }
+      const list: Guest[] = Array.from(counts.entries())
+        .map(([key, n]) => ({ name: original.get(key)!, appearances: n }))
+        .sort((a, b) => b.appearances - a.appearances || a.name.localeCompare(b.name));
+      setGuests(list);
+    };
+    void load();
+    void loadGuests();
+    // Refresh members + guest list whenever profiles or player rows change.
     const ch = supabase.channel('members')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => { void load(); void loadGuests(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_players' }, () => { void loadGuests(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_game_players' }, () => { void loadGuests(); })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
+
+  const submitPromote = async () => {
+    if (!promoting) return;
+    const display = promoteName.trim();
+    if (!display) { setPromoteMsg('Enter a display name'); return; }
+    if (!/^\d{4}$/.test(promotePin)) { setPromoteMsg('PIN must be 4 digits'); return; }
+    setPromoteBusy(true);
+    const { error } = await supabase.rpc('promote_guest_to_member', {
+      p_guest_name: promoting.name,
+      p_display_name: display,
+      p_pin: promotePin,
+    });
+    setPromoteBusy(false);
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error('[Settings] promote_guest_to_member failed:', error);
+      setPromoteMsg(error.message ?? 'Promotion failed');
+      return;
+    }
+    setPromoteMsg(`✓ ${display} is now a member. They sign in with name "${display}" + PIN ${promotePin}.`);
+    setPromoting(null);
+    toast(`${display} promoted to member ✨`, 'success');
+  };
 
   const submitReset = async () => {
     if (!resetting || !/^\d{4}$/.test(newPin)) {
@@ -391,6 +454,52 @@ export function Settings() {
             <li className="py-2 text-ink-400 text-sm">No members yet.</li>
           )}
         </ul>
+
+        {/* Past-game guests — surface them so the host can convert them into
+            real PIN members. After promotion their existing tournament/cash
+            history is re-pointed to the new profile so stats roll forward. */}
+        {guests.length > 0 && (() => {
+          const meIsAdmin = members.find((x) => x.id === user?.id)?.is_admin ?? false;
+          // Hide guests whose name already matches a registered member.
+          const memberNames = new Set(members.map((m) => m.display_name.toLowerCase()));
+          const orphans = guests.filter((g) => !memberNames.has(g.name.toLowerCase()));
+          if (orphans.length === 0) return null;
+          return (
+            <div className="mt-5 pt-4 border-t border-felt-800">
+              <p className="label !mb-1">Guests from past games</p>
+              <p className="text-xs text-ink-400 mb-3">
+                People who played as guests but never signed up. Promote them to a real member and their existing buy-ins, knockouts and prizes carry over.
+              </p>
+              <ul className="divide-y divide-felt-800">
+                {orphans.map((g) => (
+                  <li key={g.name} className="flex items-center justify-between py-2.5">
+                    <span className="flex items-center gap-3">
+                      <span className="text-xl">👤</span>
+                      <span>
+                        <div className="font-semibold">{g.name}</div>
+                        <div className="text-[10px] uppercase tracking-widest text-ink-500">
+                          {g.appearances} appearance{g.appearances === 1 ? '' : 's'} · guest only
+                        </div>
+                      </span>
+                    </span>
+                    {meIsAdmin && (
+                      <Button
+                        variant="ghost"
+                        className="!px-3 !py-1.5 text-xs"
+                        onClick={() => {
+                          setPromoting(g);
+                          setPromoteName(g.name);
+                          setPromotePin('');
+                          setPromoteMsg(null);
+                        }}
+                      >🎟 Promote</Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
       </Card>
 
       <SeasonAdmin />
@@ -428,6 +537,45 @@ export function Settings() {
         )}
         <Button full className="mt-4" onClick={submitReset} disabled={!/^\d{4}$/.test(newPin)}>
           Set new PIN
+        </Button>
+      </Sheet>
+
+      <Sheet
+        open={!!promoting}
+        onClose={() => { if (!promoteBusy) { setPromoting(null); setPromoteMsg(null); } }}
+        title={promoting ? `Promote ${promoting.name}` : ''}
+      >
+        <p className="text-ink-300 text-sm mb-4">
+          Creates a real PIN-based member account for <b>{promoting?.name}</b>. Their {promoting?.appearances} previous appearance{promoting?.appearances === 1 ? '' : 's'} as a guest will be re-pointed to the new account, so stats and history carry over.
+        </p>
+        <Input
+          label="Display name"
+          value={promoteName}
+          onChange={(e) => setPromoteName(e.target.value)}
+          placeholder="Their name"
+        />
+        <label className="label mt-4 block">PIN (they sign in with this)</label>
+        <input
+          value={promotePin}
+          onChange={(e) => setPromotePin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+          placeholder="••••"
+          inputMode="numeric"
+          autoComplete="off"
+          className="w-full text-center font-mono text-3xl tracking-[0.5em] bg-felt-900/80 border-2 border-felt-700/60 rounded-xl py-3 text-ink-50 focus:outline-none focus:border-brass-400/60"
+          maxLength={4}
+        />
+        {promoteMsg && (
+          <p className={`mt-3 text-sm text-center ${promoteMsg.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'}`}>
+            {promoteMsg}
+          </p>
+        )}
+        <Button
+          full
+          className="mt-4"
+          onClick={submitPromote}
+          disabled={promoteBusy || !promoteName.trim() || !/^\d{4}$/.test(promotePin)}
+        >
+          {promoteBusy ? 'Promoting…' : '🎟 Promote to member'}
         </Button>
       </Sheet>
     </div>

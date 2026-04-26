@@ -276,17 +276,17 @@ export function TournamentMonitor() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="font-display leading-none text-brass-shine mt-2"
+                className="font-display leading-none text-brass-shine mt-2 inline-flex items-baseline gap-3 sm:gap-5"
                 style={{ fontSize: 'clamp(4rem, 22vmin, 18rem)' }}
               >
                 {clock.level ? `${clock.level.sb}/${clock.level.bb}` : '🏁'}
+                {clock.level?.ante ? (
+                  <span className="font-sans text-ink-400 lowercase tracking-wide" style={{ fontSize: 'clamp(0.85rem, 2.4vmin, 1.4rem)' }}>
+                    ante {clock.level.ante}
+                  </span>
+                ) : null}
               </motion.div>
             </AnimatePresence>
-            {clock.level?.ante ? (
-              <div className="text-ink-300 mt-1" style={{ fontSize: 'clamp(1rem, 3.6vmin, 2rem)' }}>
-                ante {clock.level.ante}
-              </div>
-            ) : null}
             <motion.div
               className="font-mono leading-none mt-4 tabular-nums"
               style={{ fontSize: 'clamp(6rem, 50vmin, 32rem)' }}
@@ -347,17 +347,17 @@ export function TournamentMonitor() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="font-display leading-none text-brass-shine mt-1"
+                className="font-display leading-none text-brass-shine mt-1 inline-flex items-baseline gap-2 sm:gap-3"
                 style={{ fontSize: 'clamp(2.75rem, 14vmin, 11rem)' }}
               >
                 {clock.level ? `${clock.level.sb}/${clock.level.bb}` : '🏁'}
+                {clock.level?.ante ? (
+                  <span className="font-sans text-ink-400 lowercase tracking-wide" style={{ fontSize: 'clamp(0.7rem, 2vmin, 1.1rem)' }}>
+                    ante {clock.level.ante}
+                  </span>
+                ) : null}
               </motion.div>
             </AnimatePresence>
-            {clock.level?.ante ? (
-              <div className="text-ink-300 mt-1" style={{ fontSize: 'clamp(0.75rem, 2vmin, 1.1rem)' }}>
-                ante {clock.level.ante}
-              </div>
-            ) : null}
             <motion.div
               className="font-mono leading-none mt-3 tabular-nums"
               style={{ fontSize: 'clamp(4.5rem, 24vmin, 18rem)' }}

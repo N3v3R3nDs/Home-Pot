@@ -56,6 +56,11 @@ export function TournamentLive() {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [editingPlayer, setEditingPlayer] = useState<TournamentPlayer | null>(null);
+  // Mid-tournament ante override on the *current* level only. Toggling/editing
+  // patches `tournament.blind_structure[current_level].ante` and writes the
+  // whole array back. Keeps original numbers on every other level.
+  const [editingAnte, setEditingAnte] = useState(false);
+  const [anteDraft, setAnteDraft] = useState(0);
   const [editPosDraft, setEditPosDraft] = useState<number>(0);
   const [editPrizeDraft, setEditPrizeDraft] = useState<number>(0);
   const [prizeManuallyEdited, setPrizeManuallyEdited] = useState(false);
@@ -200,6 +205,23 @@ export function TournamentLive() {
     const pausedAt = new Date().toISOString();
     patchTournament({ state: 'paused', paused_at: pausedAt });
     await supabase.from('tournaments').update({ state: 'paused', paused_at: pausedAt }).eq('id', tournament.id);
+  };
+  const saveAnte = async (newAnte: number) => {
+    if (!tournament) return;
+    const idx = clock.levelIndex;
+    const next = tournament.blind_structure.map((lvl, i) =>
+      i === idx ? { ...lvl, ante: newAnte > 0 ? newAnte : undefined } : lvl,
+    );
+    patchTournament({ blind_structure: next });
+    setEditingAnte(false);
+    const { error } = await supabase.from('tournaments')
+      .update({ blind_structure: next })
+      .eq('id', tournament.id);
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error('[TournamentLive] saveAnte failed:', error);
+      toast(error.message ?? 'Could not save ante', 'error');
+    }
   };
   const advanceLevel = async (by: number) => {
     const next = Math.max(0, Math.min(tournament.blind_structure.length - 1, tournament.current_level + by));
@@ -443,7 +465,20 @@ export function TournamentLive() {
             <div className="stat-value text-brass-200">
               {clock.level ? `${clock.level.sb}/${clock.level.bb}` : '—'}
             </div>
-            {clock.level?.ante ? <div className="text-xs text-ink-400">ante {clock.level.ante}</div> : null}
+            <button
+              onClick={() => {
+                setAnteDraft(clock.level?.ante ?? 0);
+                setEditingAnte(true);
+              }}
+              className={`mt-0.5 text-[10px] uppercase tracking-widest px-1.5 py-0.5 rounded-md transition ${
+                clock.level?.ante
+                  ? 'text-brass-300 hover:bg-brass-500/10'
+                  : 'text-ink-500 hover:text-ink-300 hover:bg-felt-800'
+              }`}
+              title="Tap to edit ante for this level"
+            >
+              {clock.level?.ante ? `ante ${clock.level.ante}` : '+ ante'}
+            </button>
           </div>
           <div>
             <div className="stat-label">Next</div>
@@ -550,18 +585,31 @@ export function TournamentLive() {
         })()}
       </AnimatePresence>
 
-      {/* Payouts */}
+      {/* Payouts — for each place, show the *actual* prize already assigned
+          to a player at that finishing position when one exists, falling back
+          to the structural prediction from the payout_structure. So manual
+          prize edits (chops, hand-deals) reflect here immediately. */}
       <Card>
         <p className="label">{t('payoutsLive')}</p>
         <div className="grid grid-cols-2 gap-2">
-          {payouts.map((p) => (
-            <div key={p.place} className="flex items-center justify-between bg-felt-950/60 rounded-lg px-3 py-2">
-              <span className="text-ink-200 text-sm">
-                {p.place === 1 ? '🥇 1st' : p.place === 2 ? '🥈 2nd' : p.place === 3 ? '🥉 3rd' : `${formatPlace(p.place)}`}
-              </span>
-              <span className="font-mono text-brass-200">{formatMoney(p.percent, currency)}</span>
-            </div>
-          ))}
+          {payouts.map((p) => {
+            const finisher = players.find((pl) => pl.finishing_position === p.place);
+            const actual = finisher && Number(finisher.prize) > 0 ? Number(finisher.prize) : null;
+            const showAmount = actual ?? p.percent;
+            return (
+              <div key={p.place} className="flex items-center justify-between bg-felt-950/60 rounded-lg px-3 py-2">
+                <span className="text-ink-200 text-sm">
+                  {p.place === 1 ? '🥇 1st' : p.place === 2 ? '🥈 2nd' : p.place === 3 ? '🥉 3rd' : `${formatPlace(p.place)}`}
+                </span>
+                <span className="font-mono text-brass-200 flex items-center gap-1.5">
+                  {actual !== null && actual !== p.percent && (
+                    <span className="text-[9px] uppercase tracking-widest text-brass-300/80">edited</span>
+                  )}
+                  {formatMoney(showAmount, currency)}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </Card>
 
@@ -632,6 +680,28 @@ export function TournamentLive() {
           </ul>
         </Card>
       )}
+
+      <Sheet
+        open={editingAnte}
+        onClose={() => setEditingAnte(false)}
+        title={`Ante · Level ${clock.level?.level ?? '—'}`}
+      >
+        <p className="text-ink-300 text-sm mb-3">
+          Edits the ante on the current level only. Set 0 (or tap "Remove") to
+          play this level without antes. Other levels are unaffected.
+        </p>
+        <NumberInput
+          value={anteDraft}
+          min={0}
+          suffix="chips"
+          onValueChange={setAnteDraft}
+          autoFocus
+        />
+        <div className="flex gap-2 mt-4">
+          <Button variant="ghost" full onClick={() => void saveAnte(0)}>Remove ante</Button>
+          <Button full onClick={() => void saveAnte(anteDraft)}>Save</Button>
+        </div>
+      </Sheet>
 
       <Sheet
         open={!!editingPlayer}

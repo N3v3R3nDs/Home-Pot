@@ -16,5 +16,6 @@ COPY supabase/migrations/08-club-features.sql /docker-entrypoint-initdb.d/zz-08-
 COPY supabase/migrations/09-tournament-types.sql /docker-entrypoint-initdb.d/zz-09-tournament-types.sql
 COPY supabase/migrations/10-auto-advance.sql /docker-entrypoint-initdb.d/zz-10-auto-advance.sql
 COPY supabase/migrations/11-admin-delete-member.sql /docker-entrypoint-initdb.d/zz-11-admin-delete-member.sql
+COPY supabase/migrations/12-promote-guest.sql /docker-entrypoint-initdb.d/zz-12-promote-guest.sql
 
 RUN chmod +x /docker-entrypoint-initdb.d/zz-00-roles.sh
