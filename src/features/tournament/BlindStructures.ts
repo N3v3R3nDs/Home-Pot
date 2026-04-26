@@ -45,7 +45,7 @@ export const BLIND_TEMPLATES: BlindTemplate[] = [
     id: 'quickfire',
     name: 'Quickfire',
     description: '~2.5 hours · 12 min levels · perfect for a Tuesday',
-    recommendedStack: 5000,
+    recommendedStack: 10000,
     levels: [
       std(1, 25, 50, 12),
       std(2, 50, 100, 12),

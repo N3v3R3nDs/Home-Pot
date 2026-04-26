@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/Card';
 import { supabase } from '@/lib/supabase';
 import { useSettings } from '@/store/settings';
@@ -366,18 +367,37 @@ export function History() {
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-2">
-        {(['season', 'tournaments', 'cash'] as Tab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`py-2 rounded-xl text-sm font-semibold uppercase tracking-wider border ${
-              tab === t ? 'bg-brass-500/15 border-brass-500/50 text-brass-100' : 'bg-felt-900/60 border-felt-700 text-ink-300'
-            }`}
-          >
-            {t === 'season' ? 'Leaderboard' : t === 'tournaments' ? 'Tournaments' : 'Cash games'}
-          </button>
-        ))}
+      {/* Modern segmented control: single pill container, active tab has a
+          brass-glow background that animates between positions via framer's
+          shared-layout. Icons + tight labels keep widths even and stop the
+          "CASH GAMES" wrap that the old uppercase grid produced. */}
+      <div className="relative inline-flex w-full bg-felt-900/60 border border-felt-700 rounded-2xl p-1">
+        {(['season', 'tournaments', 'cash'] as Tab[]).map((id) => {
+          const active = tab === id;
+          const label = id === 'season' ? 'Leaderboard' : id === 'tournaments' ? 'Tournaments' : 'Cash';
+          const icon = id === 'season' ? '🏆' : id === 'tournaments' ? '🃏' : '💵';
+          return (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              className={`relative flex-1 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                active ? 'text-brass-100' : 'text-ink-300 hover:text-ink-100'
+              }`}
+            >
+              {active && (
+                <motion.span
+                  layoutId="history-tab-pill"
+                  className="absolute inset-0 rounded-xl bg-brass-500/20 border border-brass-500/40 shadow-glow"
+                  transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                />
+              )}
+              <span className="relative flex items-center justify-center gap-1.5">
+                <span className="text-base">{icon}</span>
+                <span className="truncate">{label}</span>
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {tab === 'season' && (

@@ -93,14 +93,16 @@ export interface StackSuggestion {
 
 /** Distribution profile per band count — peaks in the upper-middle bands.
  *  Tournament wisdom: a couple of small chips for blinds, more medium chips
- *  for common bets, fewer big chips for fast stacking. */
+ *  for common bets, fewer big chips for fast stacking. The 6-band profile
+ *  tapers off at the very top so weight isn't wasted on a top denomination
+ *  that's too large to fit even one chip into a typical stack. */
 const DISTRIBUTION_PROFILES: Record<number, number[]> = {
   1: [100],
   2: [25, 75],
   3: [10, 30, 60],
   4: [6, 16, 32, 46],
-  5: [4, 12, 22, 30, 32],
-  6: [3, 8, 16, 22, 26, 25],
+  5: [5, 12, 22, 30, 31],
+  6: [4, 10, 18, 28, 30, 10],
 };
 
 /**
@@ -129,9 +131,11 @@ export function suggestStartingStack(
   }
 
   const smallest = opts.smallestChip ?? 25;
-  // Largest sensible denomination for a stack: half the target (so we never
-  // hand out one chip = whole stack). Floor at smallest so we always have ≥1 band.
-  const largest = Math.max(smallest, Math.floor(targetTotal / 2));
+  // Largest sensible denomination for a stack: a third of the target (any
+  // chip ≥ 50% of the stack is a "stack-killer" that gets used for one all-in
+  // and then disappears; a third keeps the biggest chip useful for several
+  // bets). Floor at smallest so we always have ≥1 band.
+  const largest = Math.max(smallest, Math.floor(targetTotal / 3));
 
   // Candidate denominations: in range, and inventory has ≥1 per player.
   const candidates = DENOMINATIONS.filter(
@@ -145,9 +149,10 @@ export function suggestStartingStack(
     };
   }
 
-  // Pick up to 5 bands, evenly sampled across the candidate spectrum so we
-  // use a healthy spread (e.g. 25/50/100/500/1K rather than 25/50/100/500).
-  const MAX_BANDS = 5;
+  // Pick up to 6 bands, evenly sampled across the candidate spectrum so we
+  // use a healthy spread. Six is enough to keep the workhorse mid-bands
+  // (typically 100 in a 25/50/100/500/1K/5K set) instead of skipping over them.
+  const MAX_BANDS = 6;
   let bands: Denomination[];
   if (candidates.length <= MAX_BANDS) {
     bands = candidates;
@@ -273,7 +278,9 @@ export function suggestCashStack(
       warnings: [`No chips ≥ T${smallBlind} available.`] };
   }
 
-  const largest = Math.max(sbDenom, Math.floor(buyIn / 2));
+  // Never hand out a chip ≥ 50% of the buy-in — for a 200-stack that would
+  // be a 100-chip, which kills cash-poker change-making. Cap at one-third.
+  const largest = Math.max(sbDenom, Math.floor(buyIn / 3));
   const bands = DENOMINATIONS.filter((d) => d >= sbDenom && d <= largest && cap(d) >= 1);
   if (bands.length === 0) {
     return { perPlayer: {}, actualTotal: 0, targetTotal: buyIn, bands: [],
