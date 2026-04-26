@@ -20,6 +20,7 @@ import {
 import { formatChips, formatMoney } from '@/lib/format';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/Confirm';
+import { fetchRecentGuests, blockGuest, normalizeName, type RecentGuest } from '@/lib/recentGuests';
 import { useEffect } from 'react';
 import { useSeason } from '@/store/season';
 import { useT } from '@/lib/i18n';
@@ -102,7 +103,7 @@ export function TournamentWizard() {
   const [picked, setPicked] = useState<PlayerPick[]>([]);
   const [guestDraft, setGuestDraft] = useState('');
   const [profilesLoaded, setProfilesLoaded] = useState(false);
-  const [recentGuests, setRecentGuests] = useState<string[]>([]);
+  const [recentGuests, setRecentGuests] = useState<RecentGuest[]>([]);
 
   // structure
   const [templateId, setTemplateId] = useState('home-night');
@@ -132,34 +133,12 @@ export function TournamentWizard() {
 
   const loadProfiles = async () => {
     if (profilesLoaded) return;
-    // Parallel: profiles + recent guest names from past tournament_players
-    // and cash_game_players (last 100 of each, dedup, sort by recency).
-    const [{ data: profs }, { data: tPlayers }, { data: cPlayers }] = await Promise.all([
+    const [{ data: profs }, recents] = await Promise.all([
       supabase.from('profiles').select('*').order('display_name'),
-      supabase.from('tournament_players')
-        .select('guest_name, created_at')
-        .not('guest_name', 'is', null)
-        .order('created_at', { ascending: false }).limit(100),
-      supabase.from('cash_game_players')
-        .select('guest_name, created_at')
-        .not('guest_name', 'is', null)
-        .order('created_at', { ascending: false }).limit(100),
+      fetchRecentGuests(),
     ]);
     if (profs) setAllProfiles(profs as Profile[]);
-
-    const seen = new Map<string, number>();  // guest_name → most recent timestamp
-    for (const r of [...(tPlayers ?? []), ...(cPlayers ?? [])]) {
-      const name = ((r as { guest_name: string }).guest_name ?? '').trim();
-      if (!name) continue;
-      const ts = Date.parse((r as { created_at: string }).created_at);
-      if (!seen.has(name) || ts > seen.get(name)!) seen.set(name, ts);
-    }
-    const recents = Array.from(seen.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([name]) => name)
-      .slice(0, 24);
     setRecentGuests(recents);
-
     setProfilesLoaded(true);
     if (user && !picked.find((p) => p.profileId === user.id)) {
       setPicked((prev) => [{ profileId: user.id }, ...prev]);
@@ -351,19 +330,25 @@ export function TournamentWizard() {
 
           {recentGuests.length > 0 && (
             <div>
-              <p className="label">Recent guests · tap to add</p>
+              <p className="label">Recent guests · tap to add · long-press to forget</p>
               <div className="flex flex-wrap gap-1.5">
-                {recentGuests.map((name) => {
-                  const already = picked.some((p) => p.guestName?.toLowerCase() === name.toLowerCase());
+                {recentGuests.map((g) => {
+                  const norm = normalizeName(g.name);
+                  const already = picked.some((p) => p.guestName && normalizeName(p.guestName) === norm);
                   return (
                     <button
-                      key={name}
+                      key={norm}
                       onClick={() => {
                         if (already) {
-                          setPicked((prev) => prev.filter((p) => p.guestName?.toLowerCase() !== name.toLowerCase()));
+                          setPicked((prev) => prev.filter((p) => !(p.guestName && normalizeName(p.guestName) === norm)));
                         } else {
-                          setPicked((prev) => [...prev, { guestName: name }]);
+                          setPicked((prev) => [...prev, { guestName: g.name }]);
                         }
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        blockGuest(g.name);
+                        setRecentGuests((prev) => prev.filter((x) => normalizeName(x.name) !== norm));
                       }}
                       className={`pill border transition ${
                         already
@@ -371,7 +356,7 @@ export function TournamentWizard() {
                           : 'bg-felt-900/60 border-felt-700 text-ink-200 hover:border-brass-500/40'
                       }`}
                     >
-                      {already ? '✓ ' : '＋ '}{name}
+                      {already ? '✓ ' : '＋ '}{g.name}
                     </button>
                   );
                 })}

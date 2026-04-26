@@ -19,6 +19,8 @@ const TournamentMonitor  = lazy(() => import('@/features/tournament/TournamentMo
 const PublicTournament   = lazy(() => import('@/features/tournament/PublicView').then((m) => ({ default: m.PublicTournamentView })));
 const CashGameNew        = lazy(() => import('@/features/cash/CashGameNew').then((m) => ({ default: m.CashGameNew })));
 const CashGameLive       = lazy(() => import('@/features/cash/CashGameLive').then((m) => ({ default: m.CashGameLive })));
+const CashGameMonitor    = lazy(() => import('@/features/cash/CashGameMonitor').then((m) => ({ default: m.CashGameMonitor })));
+const PublicCash         = lazy(() => import('@/features/cash/PublicCashView').then((m) => ({ default: m.PublicCashView })));
 const Bank               = lazy(() => import('@/features/bank/Bank').then((m) => ({ default: m.Bank })));
 const History            = lazy(() => import('@/features/history/History').then((m) => ({ default: m.History })));
 const PlayerProfile      = lazy(() => import('@/features/players/PlayerProfile').then((m) => ({ default: m.PlayerProfile })));
@@ -60,6 +62,7 @@ export default function App() {
           <Routes>
             {/* Public spectator URL — no login needed; component anon-signs-in */}
             <Route path="/t/:code/view" element={<PublicTournament />} />
+            <Route path="/c/:code/view" element={<PublicCash />} />
             <Route path="*" element={<AuthScreen />} />
           </Routes>
         </Suspense>
@@ -87,7 +90,9 @@ export default function App() {
               <Route path="/status" element={<Status />} />
             </Route>
             <Route path="/tournament/:id/monitor" element={<TournamentMonitor />} />
+            <Route path="/cash/:id/monitor" element={<CashGameMonitor />} />
             <Route path="/t/:code/view" element={<PublicTournament />} />
+            <Route path="/c/:code/view" element={<PublicCash />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

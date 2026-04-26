@@ -1,28 +1,31 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Sheet } from '@/components/ui/Sheet';
 import { useConfirm } from '@/components/ui/Confirm';
+import { useToast } from '@/components/ui/Toast';
 import { useT } from '@/lib/i18n';
 import type { Season } from '@/types/db';
 import { supabase } from '@/lib/supabase';
 import { useSettings } from '@/store/settings';
 import { formatMoney } from '@/lib/format';
+import { useCashGame } from '@/hooks/useCashGame';
 import { computeSettlements } from './settle';
 import { recordBankTx } from '@/lib/bank';
-import type { CashBuyIn, CashGame, CashGamePlayer, Profile } from '@/types/db';
+import type { CashGamePlayer, Profile } from '@/types/db';
 
 export function CashGameLive() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { currency } = useSettings();
-  const [game, setGame] = useState<CashGame | null>(null);
-  const [players, setPlayers] = useState<CashGamePlayer[]>([]);
-  const [buyIns, setBuyIns] = useState<CashBuyIn[]>([]);
-  const [profileMap, setProfileMap] = useState<Record<string, Profile>>({});
+  const toast = useToast();
+  const {
+    game, players, buyIns, profileMap,
+    patchGame, patchPlayer, addPlayer: addPlayerLocal, addBuyIn,
+  } = useCashGame(id);
   const [adding, setAdding] = useState(false);
   const [guestName, setGuestName] = useState('');
   const [defaultBuyIn, setDefaultBuyIn] = useState(500);
@@ -74,53 +77,6 @@ export function CashGameLive() {
       .then(({ data }) => setSeasons((data ?? []) as Season[]));
   }, []);
 
-  useEffect(() => {
-    if (!id) return;
-    let cancelled = false;
-    const load = async () => {
-      const [{ data: g }, { data: ps }] = await Promise.all([
-        supabase.from('cash_games').select('*').eq('id', id).maybeSingle(),
-        supabase.from('cash_game_players').select('*').eq('cash_game_id', id).order('created_at'),
-      ]);
-      if (cancelled) return;
-      setGame(g as CashGame | null);
-      setPlayers((ps ?? []) as CashGamePlayer[]);
-      const ids = (ps ?? []).map((p) => p.profile_id).filter(Boolean) as string[];
-      if (ids.length) {
-        const { data: profiles } = await supabase.from('profiles').select('*').in('id', ids);
-        setProfileMap(Object.fromEntries((profiles ?? []).map((p) => [p.id, p as Profile])));
-      }
-      const playerIds = (ps ?? []).map((p) => p.id);
-      if (playerIds.length) {
-        const { data: bi } = await supabase.from('cash_buy_ins').select('*').in('cash_game_player_id', playerIds);
-        setBuyIns((bi ?? []) as CashBuyIn[]);
-      }
-    };
-    load();
-
-    const ch = supabase.channel(`cash:${id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_games', filter: `id=eq.${id}` },
-        (p) => setGame(p.new as CashGame))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_game_players', filter: `cash_game_id=eq.${id}` },
-        (p) => {
-          setPlayers((prev) => {
-            if (p.eventType === 'INSERT') return [...prev, p.new as CashGamePlayer];
-            if (p.eventType === 'UPDATE') return prev.map((x) => x.id === (p.new as CashGamePlayer).id ? (p.new as CashGamePlayer) : x);
-            if (p.eventType === 'DELETE') return prev.filter((x) => x.id !== (p.old as CashGamePlayer).id);
-            return prev;
-          });
-        })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_buy_ins' },
-        (p) => {
-          setBuyIns((prev) => {
-            if (p.eventType === 'INSERT') return [...prev, p.new as CashBuyIn];
-            if (p.eventType === 'DELETE') return prev.filter((x) => x.id !== (p.old as CashBuyIn).id);
-            return prev;
-          });
-        })
-      .subscribe();
-    return () => { cancelled = true; supabase.removeChannel(ch); };
-  }, [id]);
 
   const playerName = (p: CashGamePlayer) =>
     p.profile_id ? profileMap[p.profile_id]?.display_name ?? '…' : (p.guest_name ?? 'Guest');
@@ -161,13 +117,12 @@ export function CashGameLive() {
       guest_name: guest ?? null,
     }).select().single();
     if (p) {
-      // Optimistic — add to local state so it appears instantly in the list
-      setPlayers((prev) => prev.some((x) => x.id === p.id) ? prev : [...prev, p as CashGamePlayer]);
+      addPlayerLocal(p as CashGamePlayer);
       if (defaultBuyIn > 0) {
         const { data: bi } = await supabase.from('cash_buy_ins').insert({
           cash_game_player_id: p.id, amount: defaultBuyIn,
         }).select().single();
-        if (bi) setBuyIns((prev) => prev.some((x) => x.id === bi.id) ? prev : [...prev, bi as CashBuyIn]);
+        if (bi) addBuyIn(bi as import('@/types/db').CashBuyIn);
         if (fromBank) {
           await recordBankTx({
             profile_id, guest_name: guest, amount: -defaultBuyIn,
@@ -190,7 +145,7 @@ export function CashGameLive() {
     const { data: bi } = await supabase.from('cash_buy_ins').insert({
       cash_game_player_id: target.id, amount,
     }).select().single();
-    if (bi) setBuyIns((prev) => prev.some((x) => x.id === (bi as CashBuyIn).id) ? prev : [...prev, bi as CashBuyIn]);
+    if (bi) addBuyIn(bi as import('@/types/db').CashBuyIn);
 
     if (useBank) {
       await recordBankTx({
@@ -206,7 +161,7 @@ export function CashGameLive() {
   const saveRename = async () => {
     if (renaming === null || !renaming.trim() || !game) return;
     const newName = renaming.trim();
-    setGame({ ...game, name: newName });
+    patchGame({ name: newName });
     setRenaming(null);
     await supabase.from('cash_games').update({ name: newName }).eq('id', game.id);
   };
@@ -223,7 +178,7 @@ export function CashGameLive() {
     }
     setShowAdmin(false);
     const endedAt = new Date().toISOString();
-    setGame({ ...game, state: 'finished', ended_at: endedAt });
+    patchGame({ state: 'finished', ended_at: endedAt });
     await supabase.from('cash_games').update({ state: 'finished', ended_at: endedAt }).eq('id', game.id);
     navigate('/history');
   };
@@ -248,7 +203,7 @@ export function CashGameLive() {
     const useBank = leaveInBank;
     setCashOutFor(null); setLeaveInBank(false);
 
-    setPlayers((prev) => prev.map((p) => p.id === target.id ? { ...p, cash_out: amount } : p));
+    patchPlayer(target.id, { cash_out: amount });
 
     await supabase.from('cash_game_players').update({ cash_out: amount }).eq('id', target.id);
 
@@ -261,6 +216,13 @@ export function CashGameLive() {
         note: `Left in bank from ${game.name}`,
       });
     }
+  };
+
+  const copySpectatorLink = () => {
+    if (!game?.join_code) return;
+    const url = `${window.location.origin}/c/${game.join_code}/view`;
+    navigator.clipboard?.writeText(url);
+    toast(t('spectatorLinkCopied'), 'success');
   };
 
   if (!game) return <div>Loading…</div>;
@@ -284,6 +246,13 @@ export function CashGameLive() {
               {game.join_code}
             </span>
           )}
+          <Link
+            to={`/cash/${game.id}/monitor`}
+            className="btn-ghost text-sm !px-3 !py-2"
+            title={t('tableMonitor')}
+          >
+            📺
+          </Link>
           <button onClick={() => setShowAdmin(true)} className="btn-ghost text-sm !px-3 !py-2" title="More">
             ⋯
           </button>
@@ -372,7 +341,7 @@ export function CashGameLive() {
                 value={game.season_id ?? ''}
                 onChange={async (e) => {
                   const v = e.target.value || null;
-                  setGame({ ...game, season_id: v });
+                  patchGame({ season_id: v });
                   await supabase.from('cash_games').update({ season_id: v }).eq('id', game.id);
                 }}
                 className="input w-full text-sm"
@@ -381,6 +350,11 @@ export function CashGameLive() {
                 {seasons.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
+          )}
+          {game.join_code && (
+            <Button variant="ghost" full onClick={copySpectatorLink}>
+              {t('spectatorLink')}
+            </Button>
           )}
           {game.state !== 'finished' && (
             <Button variant="ghost" full onClick={endCashGame}>
