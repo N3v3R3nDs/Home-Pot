@@ -47,22 +47,38 @@ export function Status() {
         ms: Math.round(performance.now() - t1),
       });
 
-      // 4. Realtime subscription (with timeout)
+      // 4. Realtime subscription — proper diagnostic, not a binary OK/fail.
+      //    - Unique channel name so it can't collide with any subscription
+      //      currently held by the dashboard / history / etc.
+      //    - Concrete `.on('postgres_changes', ...)` binding because some
+      //      realtime servers reject empty subscribes with CHANNEL_ERROR.
+      //    - Surface the actual final status string so we can tell apart
+      //      CHANNEL_ERROR (server rejected join), TIMED_OUT (server hung),
+      //      CLOSED (socket dropped), and timeout.
       const t2 = performance.now();
-      const realtimeOk = await new Promise<boolean>((resolve) => {
-        const ch = supabase.channel('status-probe')
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') { supabase.removeChannel(ch); resolve(true); }
-            else if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-              supabase.removeChannel(ch); resolve(false);
-            }
+      const result = await new Promise<{ ok: boolean; detail: string }>((resolve) => {
+        const probeName = `status-probe:${crypto.randomUUID()}`;
+        let settled = false;
+        const finish = (ok: boolean, detail: string) => {
+          if (settled) return;
+          settled = true;
+          supabase.removeChannel(ch);
+          resolve({ ok, detail });
+        };
+        const ch = supabase.channel(probeName)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => { /* noop probe binding */ })
+          .subscribe((status, err) => {
+            if (status === 'SUBSCRIBED') finish(true, 'connected');
+            else if (status === 'CHANNEL_ERROR') finish(false, err?.message ? `error: ${err.message}` : 'channel error (server rejected join)');
+            else if (status === 'TIMED_OUT') finish(false, 'server timed out');
+            else if (status === 'CLOSED') finish(false, 'socket closed');
           });
-        setTimeout(() => { supabase.removeChannel(ch); resolve(false); }, 4000);
+        setTimeout(() => finish(false, 'no SUBSCRIBED in 5s'), 5000);
       });
       updates.push({
         name: 'Realtime subscription',
-        ok: realtimeOk,
-        detail: realtimeOk ? 'connected' : 'no echo',
+        ok: result.ok,
+        detail: result.detail,
         ms: Math.round(performance.now() - t2),
       });
 
