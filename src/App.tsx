@@ -22,6 +22,7 @@ const CashGameLive       = lazy(() => import('@/features/cash/CashGameLive').the
 const CashGameMonitor    = lazy(() => import('@/features/cash/CashGameMonitor').then((m) => ({ default: m.CashGameMonitor })));
 const PublicCash         = lazy(() => import('@/features/cash/PublicCashView').then((m) => ({ default: m.PublicCashView })));
 const Bank               = lazy(() => import('@/features/bank/Bank').then((m) => ({ default: m.Bank })));
+const ChipsPage          = lazy(() => import('@/features/chips/ChipsPage').then((m) => ({ default: m.ChipsPage })));
 const History            = lazy(() => import('@/features/history/History').then((m) => ({ default: m.History })));
 const PlayerProfile      = lazy(() => import('@/features/players/PlayerProfile').then((m) => ({ default: m.PlayerProfile })));
 const Settings           = lazy(() => import('@/features/settings/Settings').then((m) => ({ default: m.Settings })));
@@ -88,6 +89,7 @@ export default function App() {
               <Route path="/cash/new" element={<CashGameNew />} />
               <Route path="/cash/:id" element={<CashGameLive />} />
               <Route path="/bank" element={<Bank />} />
+              <Route path="/chips" element={<ChipsPage />} />
               <Route path="/history" element={<History />} />
               <Route path="/player/:id" element={<PlayerProfile />} />
               <Route path="/settings" element={<Settings />} />

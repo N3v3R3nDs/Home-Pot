@@ -135,6 +135,19 @@ export function Dashboard() {
           <div className="text-xs text-ink-400 mt-1">{t('liveLedger')}</div>
         </Link>
       </div>
+      {/* Tonight's chips — unified planner. Surfaces the dealer's float split
+          at a glance; live links into running tournament + cash game. */}
+      <Link
+        to="/chips"
+        className="card-felt p-4 flex items-center gap-3 group hover:border-brass-500/50 transition"
+      >
+        <div className="text-3xl">🎰</div>
+        <div className="flex-1">
+          <div className="font-display text-lg text-brass-shine">Tonight's chips</div>
+          <div className="text-xs text-ink-400">Plan dealer float across tournament + cash. Live updates as players bust.</div>
+        </div>
+        <span className="text-brass-300 group-hover:translate-x-0.5 transition-transform">→</span>
+      </Link>
 
       {live.length > 0 && (
         <Card>
