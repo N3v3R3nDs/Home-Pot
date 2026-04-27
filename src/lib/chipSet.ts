@@ -287,66 +287,71 @@ export function suggestCashStack(
       warnings: [`No chips in usable range.`] };
   }
 
-  // Cash-friendly profiles — flatter than tournament, mid-band heavy.
-  const CASH_PROFILES: Record<number, number[]> = {
-    1: [100],
-    2: [30, 70],
-    3: [15, 35, 50],
-    4: [10, 25, 30, 35],
-    5: [8, 18, 24, 25, 25],
-    6: [6, 14, 20, 22, 20, 18],
-    7: [5, 11, 16, 20, 19, 16, 13],
-  };
-  const profile = CASH_PROFILES[bands.length] ?? new Array(bands.length).fill(100 / bands.length);
-
   const counts = new Map<Denomination, number>();
+  const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
-  // Step 1 — reserve SB chips for posting blinds (5 is enough for several rounds).
-  const sbReserve = Math.min(5, cap(sbDenom));
-  counts.set(sbDenom, sbReserve);
-  const reservedValue = sbReserve * sbDenom;
-  const rest = Math.max(0, buyIn - reservedValue);
+  // Step 1 — reserve a *real working stack* of small chips. Five SB chips is
+  // way too few for a 2-4 cash game where SB gets paid every orbit. We size
+  // the small-chip reserve to the buy-in so a 500-stack with 2/4 blinds gets
+  // ~20 T2 chips, enough to play 15+ orbits without asking for change.
+  // Targets ~8% of the buy-in in the smallest band, with hard min/max so we
+  // don't go silly on tiny or huge buy-ins.
+  const smallest = bands[0];
+  const smallTargetValue = Math.max(buyIn * 0.08, sbDenom * 8);
+  const smallCount = clamp(
+    Math.round(smallTargetValue / smallest),
+    Math.min(cap(smallest), 12),  // hard min when stock allows
+    Math.min(cap(smallest), 30),  // hard max
+  );
+  counts.set(smallest, smallCount);
 
-  // Step 2 — first-pass weighted distribution of the remainder across the
-  // other bands. Skip the SB band; we already seeded it.
-  bands.forEach((d, i) => {
-    if (d === sbDenom) return;
-    const wantValue = (rest * profile[i]) / 100;
-    const wantCount = Math.max(0, Math.floor(wantValue / d));
-    counts.set(d, Math.min(wantCount, cap(d)));
-  });
+  // Step 2 — second-band floor for raise sizing (3xBB, c-bets etc.). Sized
+  // ~15% of the buy-in in the next denomination up; same min/max guard.
+  if (bands.length > 1) {
+    const second = bands[1];
+    const secondTargetValue = Math.max(buyIn * 0.15, sbDenom * 16);
+    const secondCount = clamp(
+      Math.round(secondTargetValue / second),
+      Math.min(cap(second), 8),
+      Math.min(cap(second), 20),
+    );
+    counts.set(second, secondCount);
+  }
+
+  // Step 3 — distribute the remaining buy-in across the *upper* bands
+  // (skipping the two we already floored). Cash players cycle 25/50/100 most,
+  // so a mid-heavy taper works well.
+  const reservedNow = Array.from(counts.entries()).reduce((s, [d, n]) => s + d * n, 0);
+  const upper = bands.slice(2);
+  if (upper.length > 0) {
+    const rest = Math.max(0, buyIn - reservedNow);
+    // Mid-heavy weights: spread mostly across the lower-mid bands; very few
+    // big chips since they're hard to break in cash play.
+    const upperWeights = upper.map((_, i) => {
+      const center = (upper.length - 1) / 2;
+      const dist = Math.abs(i - center);
+      return Math.exp(-dist * 0.6);
+    });
+    const wSum = upperWeights.reduce((s, w) => s + w, 0);
+    upper.forEach((d, i) => {
+      const wantValue = (rest * upperWeights[i]) / wSum;
+      const wantCount = Math.max(0, Math.floor(wantValue / d));
+      counts.set(d, Math.min(wantCount, cap(d)));
+    });
+  }
 
   const totalOf = () => Array.from(counts.entries()).reduce((s, [d, n]) => s + d * n, 0);
   let total = totalOf();
-  const tolerance = Math.max(Math.floor(buyIn * 0.01), sbDenom);
 
-  // Step 3 — greedy top-up: repeatedly add the chip that gets us closest to
-  // target without overshooting (tie-break favors the larger chip).
-  for (let safety = 0; safety < 400 && total < buyIn - tolerance; safety++) {
-    const remaining = buyIn - total;
-    let bestIdx = -1;
-    let bestScore = Infinity;
-    bands.forEach((d, i) => {
-      if ((counts.get(d) ?? 0) >= cap(d)) return;
-      const overshoot = Math.max(0, d - remaining);
-      const score = overshoot - d * 0.001;
-      if (score < bestScore) { bestScore = score; bestIdx = i; }
-    });
-    if (bestIdx === -1) break;
-    const d = bands[bestIdx];
-    counts.set(d, (counts.get(d) ?? 0) + 1);
-    total += d;
-  }
-
-  // Step 4 — trim from the top if we overshot. Never trim the SB reserve.
-  for (let safety = 0; safety < 400 && total > buyIn + tolerance; safety++) {
+  // Step 2.5 — if Phase 1 already overshot the buy-in (high weights on small
+  // bands can do that), trim from the top before the exact-fill pass.
+  for (let safety = 0; safety < 400 && total > buyIn; safety++) {
     let removed = false;
     for (let i = bands.length - 1; i >= 0; i--) {
       const d = bands[i];
       if (d === sbDenom) continue;
       const c = counts.get(d) ?? 0;
       if (c <= 0) continue;
-      if (total - d < buyIn - tolerance) continue;
       counts.set(d, c - 1);
       total -= d;
       removed = true;
@@ -355,14 +360,38 @@ export function suggestCashStack(
     if (!removed) break;
   }
 
+  // Step 3 — exact-target greedy. Pick the largest chip that fits without
+  // overshooting, repeat until total === buyIn or no chip fits. The previous
+  // version used a 1% tolerance and a tie-break that quietly stopped a few
+  // kr short ("500 buy-in" rendering as 495). Now we always hit the target
+  // exactly when the available denominations can divide the remaining gap.
+  for (let safety = 0; safety < 2000 && total < buyIn; safety++) {
+    const remaining = buyIn - total;
+    let bestIdx = -1;
+    let bestScore = -1;
+    bands.forEach((d, i) => {
+      if (d > remaining) return;                       // would overshoot
+      if ((counts.get(d) ?? 0) >= cap(d)) return;      // out of stock
+      // Pick the largest chip that still fits — fewer chips per bag is nicer
+      // to handle, and small chips are better saved for blinds.
+      if (d > bestScore) { bestScore = d; bestIdx = i; }
+    });
+    if (bestIdx === -1) break;                         // gap unfillable
+    const d = bands[bestIdx];
+    counts.set(d, (counts.get(d) ?? 0) + 1);
+    total += d;
+  }
+
   const perPlayer: Partial<Record<Denomination, number>> = {};
   bands.forEach((d) => {
     const c = counts.get(d) ?? 0;
     if (c > 0) perPlayer[d] = c;
   });
 
-  if (Math.abs(total - buyIn) > tolerance) {
-    warnings.push(`Best mix is ${total.toLocaleString()} (target ${buyIn.toLocaleString()}).`);
+  if (total !== buyIn) {
+    warnings.push(
+      `Bag totals ${total.toLocaleString()} — can't reach ${buyIn.toLocaleString()} exactly with the chips on hand (gap ${(buyIn - total).toLocaleString()}).`,
+    );
   }
 
   return { perPlayer, actualTotal: total, targetTotal: buyIn, warnings, bands };

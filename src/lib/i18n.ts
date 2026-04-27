@@ -349,6 +349,89 @@ const en = {
   hotSeat: 'Hot seat',
   moneyInMotion: 'Money in motion',
   biggestBuyIn: 'Biggest buy-in',
+
+  // Chips planner
+  chipsTitle: "🎰 Tonight's chips",
+  chipsTrackingSubtitle: "Tracking live game · auto-updates as {what}",
+  chipsTrackingPlayers: 'players bust',
+  chipsTrackingCash: 'cash players join',
+  chipsPlanningSubtitle: "Plan the dealer's float across tournament + cash so you don't run out of any denomination.",
+  chipsTrackingLive: 'Tracking live game',
+  chipsAlive: '{alive}/{total} alive',
+  chipsCashLabel: 'Cash: {name}',
+  chipsPlanSomethingElse: 'Plan something else',
+  chipsResumeTracking: '↩ resume tracking live game',
+  chipsTournament: 'Tournament',
+  chipsCashGame: 'Cash game',
+  chipsPlayers: 'Players',
+  chipsStartingStack: 'Starting stack',
+  chipsBuyIn: 'Buy-in',
+  chipsSmallBlind: 'Small blind',
+  chipsTournamentReserve: 'Tournament reserve',
+  chipsActiveStacks: '{n} active stack{s}',
+  chipsReturnedToDealer: '{n} returned to dealer',
+  chipsTotalReserved: 'total reserved',
+  chipsPerPlayerStack: 'Per-player stack',
+  chipsTargetBuilt: 'Target {target} · Built {built}',
+  chipsCashBag: 'Cash buy-in bag',
+  chipsBagSizedFor: 'Sized for {amount} buy-in · {sb}/{bb} blinds',
+  chipsBuyInsAvailable: 'buy-in{s} available',
+  chipsPerBuyIn: 'Per buy-in',
+  chipsInventoryShort: 'Inventory short',
+  chipsOverCommit: 'Reserving the tournament + 1 cash bag would over-commit:',
+  chipsShortBy: '{label}: short by {n}',
+  chipsTrimSuggest: 'Either trim the tournament starting stack, lower the cash buy-in, or grab more chips before play starts.',
+  chipsDealerFloat: 'Dealer float after reservations',
+  chipsDealerFloatHint: "What's left in the dealer's hand once tournament starting stacks are bagged.",
+  chipsNothingLeft: 'Nothing left over — all chips spoken for.',
+  chipsNoChips: 'No chips.',
+
+  // Season pot card
+  seasonPotLabel: 'Season pot',
+  seasonPotPaidOut: '{tournaments} tournament{s} · {entries} entries · paid out at the season-end final table',
+  seasonPotStandings: 'Final-table standings',
+  seasonPotPointsCashes: '{points} pts · {cashes} cash{plural}',
+  seasonPotPlace: '{n}.',
+
+  // Tournament wizard — season carve + hosting only
+  seasonCarveTitle: 'Season pot carve',
+  seasonCarveInSeason: 'in season',
+  seasonCarveOnHint: 'Each entry diverts {amount} to the season pot. Effective night prize: {effective}.',
+  seasonCarveOffHint: 'Set above 0 to fund a season-end final table. e.g. 50 of a {buyin} buy-in.',
+  hostingOnly: 'Hosting only — not playing',
+  hostingOnlyOn: "You won't be added to the roster.",
+  hostingOnlyOff: "Off — you'll be added to the player list.",
+
+  // Tournament live
+  seasonContribution: 'Season pot contribution',
+  seasonContributionRate: '{rate} per entry · {entries} entries',
+  anteOn: 'ante {n} · on',
+  anteOff: 'ante off',
+  anteTitleOn: 'Antes ON — tap to turn off',
+  anteTitleOff: 'Antes OFF — tap to turn on',
+  prizeEdited: 'edited',
+
+  // Settings — admin / members / rename
+  settingsTab: '⚙️ Settings',
+  adminTab: '🛡️ Admin',
+  rename_: '✏️',
+  renameMember: 'Rename {name}',
+  renameSelfBody: 'Update your own display name.',
+  renameOtherBody: 'Their stats, bank balance and tournament history are unaffected — only the visible name changes.',
+  displayNameLabel: 'Display name',
+  saveName: 'Save name',
+  savingDots: 'Saving…',
+  nameRequired: 'Name required',
+  renameFailed: 'Rename failed',
+
+  // Settings — sign out
+  signOutBody: 'You can sign back in anytime with your name + PIN (or email).',
+
+  // Status page
+  statusBuildMode: 'Build mode',
+  statusUserAgent: 'User agent',
+  statusViewport: 'Viewport',
+  statusOnline: 'Online',
 };
 
 const no: typeof en = {
@@ -666,6 +749,89 @@ const no: typeof en = {
   hotSeat: 'Het sete',
   moneyInMotion: 'Penger i sving',
   biggestBuyIn: 'Største buy-in',
+
+  // Chips planner
+  chipsTitle: '🎰 Kveldens sjips',
+  chipsTrackingSubtitle: 'Sporer pågående spill · oppdateres når {what}',
+  chipsTrackingPlayers: 'spillere blir slått ut',
+  chipsTrackingCash: 'spillere kommer på cash-bordet',
+  chipsPlanningSubtitle: 'Planlegg dealerens sjipsbeholdning på tvers av turnering + cash, så du ikke går tom for noen valør.',
+  chipsTrackingLive: 'Sporer pågående spill',
+  chipsAlive: '{alive}/{total} igjen',
+  chipsCashLabel: 'Cash: {name}',
+  chipsPlanSomethingElse: 'Planlegg noe annet',
+  chipsResumeTracking: '↩ gjenoppta sporing av pågående spill',
+  chipsTournament: 'Turnering',
+  chipsCashGame: 'Cash game',
+  chipsPlayers: 'Spillere',
+  chipsStartingStack: 'Startstack',
+  chipsBuyIn: 'Buy-in',
+  chipsSmallBlind: 'Small blind',
+  chipsTournamentReserve: 'Turnerings­reserve',
+  chipsActiveStacks: '{n} aktiv{s}',
+  chipsReturnedToDealer: '{n} tilbake til dealer',
+  chipsTotalReserved: 'totalt reservert',
+  chipsPerPlayerStack: 'Per spiller',
+  chipsTargetBuilt: 'Mål {target} · Bygd {built}',
+  chipsCashBag: 'Cash buy-in-pose',
+  chipsBagSizedFor: 'Tilpasset {amount} buy-in · {sb}/{bb} blinds',
+  chipsBuyInsAvailable: 'buy-in{s} tilgjengelig',
+  chipsPerBuyIn: 'Per buy-in',
+  chipsInventoryShort: 'Beholdning kommer til kort',
+  chipsOverCommit: 'Reservering av turnering + 1 cash-pose vil overforplikte:',
+  chipsShortBy: '{label}: mangler {n}',
+  chipsTrimSuggest: 'Reduser turneringens startstack, senk cash-buy-in, eller legg til flere sjips før spillet starter.',
+  chipsDealerFloat: 'Dealer-float etter reservering',
+  chipsDealerFloatHint: 'Det som er igjen i dealerens hånd etter at turneringens startstacker er pakket.',
+  chipsNothingLeft: 'Ingenting igjen — alle sjips er reservert.',
+  chipsNoChips: 'Ingen sjips.',
+
+  // Season pot card
+  seasonPotLabel: 'Sesongpott',
+  seasonPotPaidOut: '{tournaments} turnering{s} · {entries} entries · betales ut ved sesongens finalebord',
+  seasonPotStandings: 'Finalebord-stilling',
+  seasonPotPointsCashes: '{points} p · {cashes} cash{plural}',
+  seasonPotPlace: '{n}.',
+
+  // Tournament wizard — season carve + hosting only
+  seasonCarveTitle: 'Sesongpott-bidrag',
+  seasonCarveInSeason: 'i sesong',
+  seasonCarveOnHint: 'Hver entry sender {amount} til sesongpotten. Effektiv premie: {effective}.',
+  seasonCarveOffHint: 'Sett over 0 for å bygge opp en sesongavslutning. F.eks. 50 av en {buyin} buy-in.',
+  hostingOnly: 'Kun vert — spiller ikke',
+  hostingOnlyOn: 'Du blir ikke lagt til i spillerlisten.',
+  hostingOnlyOff: 'Av — du blir lagt til i spillerlisten.',
+
+  // Tournament live
+  seasonContribution: 'Bidrag til sesongpotten',
+  seasonContributionRate: '{rate} per entry · {entries} entries',
+  anteOn: 'ante {n} · på',
+  anteOff: 'ante av',
+  anteTitleOn: 'Ante PÅ — trykk for å skru av',
+  anteTitleOff: 'Ante AV — trykk for å skru på',
+  prizeEdited: 'endret',
+
+  // Settings — admin / members / rename
+  settingsTab: '⚙️ Innstillinger',
+  adminTab: '🛡️ Admin',
+  rename_: '✏️',
+  renameMember: 'Endre navn på {name}',
+  renameSelfBody: 'Endre ditt eget visningsnavn.',
+  renameOtherBody: 'Statistikk, banksaldo og turneringshistorikk påvirkes ikke — kun det synlige navnet endres.',
+  displayNameLabel: 'Visningsnavn',
+  saveName: 'Lagre navn',
+  savingDots: 'Lagrer…',
+  nameRequired: 'Navn kreves',
+  renameFailed: 'Navneendring feilet',
+
+  // Settings — sign out
+  signOutBody: 'Du kan logge inn igjen når som helst med navn + PIN (eller e-post).',
+
+  // Status page
+  statusBuildMode: 'Bygg-modus',
+  statusUserAgent: 'User agent',
+  statusViewport: 'Visningsfelt',
+  statusOnline: 'Tilkoblet',
 };
 
 export const STRINGS: Record<Lang, typeof en> = { en, no };

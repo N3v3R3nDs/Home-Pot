@@ -143,8 +143,8 @@ export function Dashboard() {
       >
         <div className="text-3xl">🎰</div>
         <div className="flex-1">
-          <div className="font-display text-lg text-brass-shine">Tonight's chips</div>
-          <div className="text-xs text-ink-400">Plan dealer float across tournament + cash. Live updates as players bust.</div>
+          <div className="font-display text-lg text-brass-shine">{t('chipsTitle')}</div>
+          <div className="text-xs text-ink-400">{t('chipsPlanningSubtitle')}</div>
         </div>
         <span className="text-brass-300 group-hover:translate-x-0.5 transition-transform">→</span>
       </Link>
